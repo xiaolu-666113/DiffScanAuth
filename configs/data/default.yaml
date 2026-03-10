@@ -1,0 +1,34 @@
+raw_dir: data/raw
+processed_dir: data/processed
+splits_dir: data/splits
+metadata_csv: data/processed/metadata.csv
+eye_tracking_csv: data/processed/eye_tracking.csv
+processed_fixations_csv: data/processed/processed_fixations.csv
+heatmap_dir: data/processed/heatmaps
+inspect_report_json: data/processed/dataset_inspection.json
+split_report_json: data/splits/split_report.json
+
+allow_synthetic: true
+synthetic_num_images: 120
+synthetic_seed: 42
+synthetic_num_subjects: 10
+
+image_size: 384
+heatmap_size: 96
+patch_grid_size: 24
+max_fixations: 12
+
+duration_norm_mode: log_zscore
+min_duration_ms: 40.0
+max_duration_ms: 2000.0
+
+split:
+  train: 0.7
+  val: 0.15
+  test: 0.15
+  seed: 42
+
+loader:
+  batch_size: 8
+  num_workers: 0
+  pin_memory: false

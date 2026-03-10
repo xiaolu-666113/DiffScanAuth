@@ -1,0 +1,7 @@
+# @package _global_
+defaults:
+  - override /model: baseline_heatmap
+
+experiment:
+  name: exp_heatmap_aux
+  description: "Baseline B: classification + heatmap auxiliary supervision"

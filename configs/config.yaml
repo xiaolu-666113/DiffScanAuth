@@ -1,0 +1,19 @@
+defaults:
+  - data: default
+  - model: baseline_static
+  - trainer: default
+  - experiment: baseline_static
+  - _self_
+
+project_name: DiffScanAuth
+seed: 42
+
+ios:
+  outputs_root: outputs
+
+hydra:
+  run:
+    dir: .
+  output_subdir: null
+  job:
+    chdir: false

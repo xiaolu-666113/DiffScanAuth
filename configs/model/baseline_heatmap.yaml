@@ -1,0 +1,13 @@
+name: baseline_heatmap
+lit_module: heatmap
+
+backbone_name: convnext_tiny
+pretrained: true
+dropout: 0.2
+heatmap_size: 96
+lambda_heatmap: 0.5
+
+optimizer:
+  lr: 3e-4
+  weight_decay: 1e-4
+  pos_weight: null

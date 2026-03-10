@@ -1,0 +1,13 @@
+max_epochs: 8
+precision: 16-mixed
+accelerator: auto
+devices: auto
+log_every_n_steps: 10
+deterministic: true
+
+monitor: val/auroc
+monitor_mode: max
+early_stopping_patience: 5
+save_top_k: 1
+
+fast_dev_run: false

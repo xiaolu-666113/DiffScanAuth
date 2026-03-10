@@ -1,0 +1,65 @@
+"""Run checkpoint inference and export prediction CSV."""
+
+from __future__ import annotations
+
+import argparse
+import os
+from pathlib import Path
+import sys
+
+MPL_DIR = Path("outputs/.mplconfig")
+MPL_DIR.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("MPLCONFIGDIR", str(MPL_DIR.resolve()))
+os.environ.setdefault("MPLBACKEND", "Agg")
+CACHE_DIR = Path("outputs/.cache")
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("XDG_CACHE_HOME", str(CACHE_DIR.resolve()))
+
+import pandas as pd
+import pytorch_lightning as pl
+from hydra import compose, initialize_config_dir
+from omegaconf import OmegaConf
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from src.utils.io import ensure_dir
+from src.utils.pipeline import build_dataloaders, build_lightning_module, ensure_prepared_data
+
+
+def load_cfg(experiment: str, overrides: list[str]):
+    config_dir = Path(__file__).resolve().parents[1] / "configs"
+    with initialize_config_dir(config_dir=str(config_dir), version_base=None):
+        cfg = compose(config_name="config", overrides=[f"experiment={experiment}"] + overrides)
+    return cfg
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Export model predictions")
+    parser.add_argument("--experiment", type=str, default="baseline_static")
+    parser.add_argument("--ckpt", type=str, required=True)
+    parser.add_argument("--split", type=str, default="test", choices=["train", "val", "test"])
+    parser.add_argument("--out", type=str, default="")
+    args, unknown = parser.parse_known_args()
+
+    cfg = load_cfg(args.experiment, unknown)
+    data_cfg = OmegaConf.to_container(cfg.data, resolve=True)
+    model_cfg = OmegaConf.to_container(cfg.model, resolve=True)
+
+    ensure_prepared_data(data_cfg)
+    loaders = build_dataloaders(data_cfg, model_name=str(model_cfg["name"]), train_aug=False)
+
+    lit = build_lightning_module(model_cfg)
+    trainer = pl.Trainer(logger=False, enable_checkpointing=False, accelerator="auto", devices="auto")
+    trainer.test(lit, dataloaders=loaders[args.split], ckpt_path=args.ckpt)
+
+    pred_df = pd.DataFrame(lit.test_outputs)
+    pred_dir = ensure_dir("outputs/predictions")
+    out_path = Path(args.out) if args.out else pred_dir / f"{cfg.experiment.name}_{args.split}_predictions.csv"
+    pred_df.to_csv(out_path, index=False)
+    print(f"Saved predictions: {out_path}")
+
+
+if __name__ == "__main__":
+    main()

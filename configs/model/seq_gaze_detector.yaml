@@ -1,0 +1,27 @@
+name: seq_gaze_detector
+lit_module: seq
+
+backbone_name: convnext_tiny
+pretrained: true
+patch_grid_size: 24
+policy_hidden_dim: 256
+glimpse_dim: 256
+accumulator_hidden_dim: 256
+accumulator_backend: gru
+stop_mode: fixed_k
+teacher_forcing_ratio: 1.0
+teacher_forcing_final: 0.7
+align_loss: mse
+dropout: 0.1
+
+loss_cls: 1.0
+loss_patch: 0.6
+loss_coord: 0.4
+loss_dur: 0.2
+loss_stop: 0.2
+loss_align: 0.1
+
+optimizer:
+  lr: 3e-4
+  weight_decay: 1e-4
+  pos_weight: null

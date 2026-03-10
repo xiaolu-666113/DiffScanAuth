@@ -1,0 +1,10 @@
+# @package _global_
+defaults:
+  - override /model: seq_gaze_detector
+
+model:
+  stop_mode: learned_stop
+
+experiment:
+  name: exp_seq_gaze_stop
+  description: "Main model with learned stop"

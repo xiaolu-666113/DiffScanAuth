@@ -1,0 +1,7 @@
+# @package _global_
+defaults:
+  - override /model: baseline_static
+
+experiment:
+  name: exp_static_vit
+  description: "Baseline A: static image classifier"

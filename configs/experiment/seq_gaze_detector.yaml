@@ -1,0 +1,7 @@
+# @package _global_
+defaults:
+  - override /model: seq_gaze_detector
+
+experiment:
+  name: exp_seq_gaze_fixedK
+  description: "Main model with fixed-K sequential gaze supervision"
