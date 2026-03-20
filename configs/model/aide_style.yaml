@@ -1,0 +1,12 @@
+name: aide_style
+lit_module: aide
+
+rgb_backbone_name: convnext_tiny
+artifact_backbone_name: convnext_tiny
+pretrained: false
+dropout: 0.2
+
+optimizer:
+  lr: 3e-4
+  weight_decay: 1e-4
+  pos_weight: null

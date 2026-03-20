@@ -1,8 +1,8 @@
 defaults:
   - data: default
-  - model: baseline_static
+  - model: diffscanauth
   - trainer: default
-  - experiment: baseline_static
+  - experiment: exp_diffscanauth
   - _self_
 
 project_name: DiffScanAuth

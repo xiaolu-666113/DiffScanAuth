@@ -1,0 +1,52 @@
+name: diffscanauth
+lit_module: diffscanauth
+
+global_stream_name: siglip2-so400m-patch16-224
+local_stream_name: dinov2_vits14
+pretrained: false
+use_local_stream: true
+use_teacher: true
+use_gaze_supervision: true
+use_teacher_distill: true
+init_from_ckpt: ""
+teacher_ckpt: ""
+strict_load: false
+freeze_teacher: false
+
+policy_type: transformer
+teacher_hidden_dim: 256
+policy_hidden_dim: 192
+glimpse_dim: 192
+accumulator_hidden_dim: 192
+accumulator_backend: gru
+patch_grid_size: 24
+max_steps: 12
+stop_mode: learned_stop
+fixed_steps: 12
+confidence_threshold: 0.6
+stop_threshold: 0.55
+policy_layers: 2
+policy_heads: 4
+dropout: 0.1
+
+training_stage: student
+teacher_forcing_ratio: 1.0
+teacher_forcing_final: 0.5
+scheduled_sampling_ratio: 0.0
+scheduled_sampling_final: 0.5
+align_loss: kl
+use_rl: false
+shuffled_gaze: false
+shuffle_seed: 42
+
+loss_cls: 1.0
+loss_gaze: 1.0
+loss_distill: 0.5
+loss_align: 0.1
+loss_stop: 0.2
+loss_rl: 0.0
+
+optimizer:
+  lr: 3e-4
+  weight_decay: 1e-4
+  pos_weight: null

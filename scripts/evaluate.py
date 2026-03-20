@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from pathlib import Path
 import sys
@@ -27,7 +28,7 @@ if str(ROOT) not in sys.path:
 from src.evaluation.metrics_classification import classification_metrics
 from src.utils.io import ensure_dir, save_json
 from src.utils.pipeline import build_dataloaders, build_lightning_module, ensure_prepared_data
-from src.utils.plotting import plot_confusion_matrix, plot_roc_curve
+from src.utils.plotting import plot_confusion_matrix, plot_confidence_over_time, plot_pr_curve, plot_roc_curve
 from src.utils.seed import set_global_seed
 
 
@@ -40,7 +41,7 @@ def load_cfg(experiment: str, overrides: list[str]):
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate checkpoint")
-    parser.add_argument("--experiment", type=str, default="baseline_static")
+    parser.add_argument("--experiment", type=str, default="exp_diffscanauth")
     parser.add_argument("--ckpt", type=str, required=True)
     parser.add_argument("--split", type=str, default="test", choices=["train", "val", "test"])
     args, unknown = parser.parse_known_args()
@@ -52,7 +53,7 @@ def main() -> None:
     model_cfg = OmegaConf.to_container(cfg.model, resolve=True)
     ensure_prepared_data(data_cfg)
 
-    loaders = build_dataloaders(data_cfg, model_name=str(model_cfg["name"]), train_aug=False)
+    loaders = build_dataloaders(data_cfg, model_cfg=model_cfg, train_aug=False)
     lit = build_lightning_module(model_cfg)
 
     trainer = pl.Trainer(logger=False, enable_checkpointing=False, accelerator="auto", devices="auto")
@@ -76,6 +77,17 @@ def main() -> None:
         payload["classification"] = classification_metrics(y_true, y_prob)
         plot_confusion_matrix(y_true, (y_prob >= 0.5).astype(int), fig_dir / f"{suffix}_confusion_matrix.png")
         plot_roc_curve(y_true, y_prob, fig_dir / f"{suffix}_roc_curve.png")
+        plot_pr_curve(y_true, y_prob, fig_dir / f"{suffix}_pr_curve.png")
+        if {"coord_mae", "dur_mae", "decision_steps", "stop_step_error"}.issubset(pred_df.columns):
+            payload["gaze"] = {
+                "fixation_position_mae": float(pred_df["coord_mae"].mean()),
+                "duration_mae": float(pred_df["dur_mae"].mean()),
+                "avg_decision_steps": float(pred_df["decision_steps"].mean()),
+                "stop_step_error": float(pred_df["stop_step_error"].mean()),
+            }
+        if "step_probs_json" in pred_df.columns:
+            sequences = [json.loads(x) for x in pred_df["step_probs_json"].dropna().tolist()]
+            plot_confidence_over_time(sequences, fig_dir / f"{suffix}_confidence_curve.png", title=f"{suffix} Confidence")
 
     out_path = metric_dir / f"{suffix}_metrics.json"
     save_json(payload, out_path)

@@ -157,7 +157,12 @@ def clean_and_normalize_fixations(
 
     df = df.sort_values(["subject_id", "image_id", "t"]).reset_index(drop=True)
     df["fixation_idx"] = df.groupby(["subject_id", "image_id"]).cumcount()
+    df["prev_x_norm"] = df.groupby(["subject_id", "image_id"])["x_norm"].shift(1).fillna(df["x_norm"])
+    df["prev_y_norm"] = df.groupby(["subject_id", "image_id"])["y_norm"].shift(1).fillna(df["y_norm"])
+    df["delta_x"] = df["x_norm"] - df["prev_x_norm"]
+    df["delta_y"] = df["y_norm"] - df["prev_y_norm"]
     df = df.rename(columns={"duration": "duration_ms"})
+    df = df.drop(columns=["prev_x_norm", "prev_y_norm"])
 
     return df
 

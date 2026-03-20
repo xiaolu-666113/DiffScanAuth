@@ -1,0 +1,7 @@
+# @package _global_
+defaults:
+  - override /model: diffscanauth
+
+experiment:
+  name: exp_diffscanauth
+  description: "Full DiffScanAuth method"

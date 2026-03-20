@@ -37,7 +37,7 @@ def load_cfg(experiment: str, overrides: list[str]):
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Export model predictions")
-    parser.add_argument("--experiment", type=str, default="baseline_static")
+    parser.add_argument("--experiment", type=str, default="exp_diffscanauth")
     parser.add_argument("--ckpt", type=str, required=True)
     parser.add_argument("--split", type=str, default="test", choices=["train", "val", "test"])
     parser.add_argument("--out", type=str, default="")
@@ -48,7 +48,7 @@ def main() -> None:
     model_cfg = OmegaConf.to_container(cfg.model, resolve=True)
 
     ensure_prepared_data(data_cfg)
-    loaders = build_dataloaders(data_cfg, model_name=str(model_cfg["name"]), train_aug=False)
+    loaders = build_dataloaders(data_cfg, model_cfg=model_cfg, train_aug=False)
 
     lit = build_lightning_module(model_cfg)
     trainer = pl.Trainer(logger=False, enable_checkpointing=False, accelerator="auto", devices="auto")

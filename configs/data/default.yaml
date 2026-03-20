@@ -9,11 +9,11 @@ inspect_report_json: data/processed/dataset_inspection.json
 split_report_json: data/splits/split_report.json
 
 allow_synthetic: true
-synthetic_num_images: 120
+synthetic_num_images: 48
 synthetic_seed: 42
-synthetic_num_subjects: 10
+synthetic_num_subjects: 6
 
-image_size: 384
+image_size: 224
 heatmap_size: 96
 patch_grid_size: 24
 max_fixations: 12

@@ -1,0 +1,13 @@
+name: vit_gaze_heatmap
+lit_module: heatmap
+
+backbone_name: vit_base_patch16_224
+pretrained: false
+heatmap_size: 96
+lambda_heatmap: 0.5
+dropout: 0.2
+
+optimizer:
+  lr: 3e-4
+  weight_decay: 1e-4
+  pos_weight: null

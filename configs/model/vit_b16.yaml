@@ -1,0 +1,11 @@
+name: vit_b16
+lit_module: vit
+
+backbone_name: vit_base_patch16_224
+pretrained: false
+dropout: 0.2
+
+optimizer:
+  lr: 3e-4
+  weight_decay: 1e-4
+  pos_weight: null

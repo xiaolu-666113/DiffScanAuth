@@ -58,6 +58,7 @@ class StaticImageDataset(Dataset):
             "image": image,
             "label": label,
             "image_id": str(row["image_id"]),
+            "image_path": str(image_path),
         }
 
         if self.heatmap_dir is not None:

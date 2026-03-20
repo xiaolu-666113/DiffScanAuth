@@ -1,30 +1,92 @@
 # DiffScanAuth
 
-Language: **English (default)** | [中文](#中文)
+Language: **English (default)** | [中文](#中文说明)
 
 ---
 
 ## English
 
-### 1. What This Repository Does
-DiffScanAuth is a reproducible research codebase for **AIGC vs Real image binary classification** using:
-- image signals
-- human eye-tracking signals (fixation/gaze)
+### Overview
+This repository is the executable paper codebase for:
 
-It includes:
-1. automatic dataset inspection and schema adaptation
-2. metadata generation and eye-tracking preprocessing
-3. leakage-safe split generation (image-level split units)
-4. 3 model families (static / heatmap-aux / sequential gaze-guided)
-5. training / evaluation / prediction / analysis scripts
-6. smoke test + unit tests
-7. Hydra config-based experiment control
+**DiffScanAuth: Human-Gaze-Supervised Sequential Evidence Accumulation for AI-Generated Image Detection**
 
-If real data is not available yet, the pipeline auto-generates synthetic data so the whole system is runnable immediately.
+It upgrades the earlier scaffold into a paper-aligned implementation with:
 
-### 2. Quick Start
+1. final baselines
+2. final ablations
+3. shuffled-gaze control
+4. dummy-data mode before real data upload
+5. end-to-end training, evaluation, prediction, visualization, and analysis scripts
+6. leakage-safe image-level splitting
+7. stage-wise support for teacher pretraining, student training, and optional efficiency refinement
 
-#### 2.1 Environment
+### What Is Implemented
+
+#### Main paper method
+- `DiffScanAuth`
+  - dual-stream encoder
+  - diffusion-based scanpath teacher
+  - causal gaze student
+  - foveated evidence reader
+  - evidence accumulator
+  - learned stop or fixed-K inference
+
+#### Main baselines
+- `exp_vit_b16`: ViT-B/16 static classifier
+- `exp_aide_style`: AIDE-style RGB + artifact/frequency hybrid detector
+- `exp_vit_heatmap`: ViT + human gaze heatmap supervision
+- `exp_seqdet_no_gaze`: sequential detector without human gaze supervision
+- `exp_diffscanauth`: full DiffScanAuth
+
+#### Ablations
+- `ablation_no_gaze_supervision`
+- `ablation_heatmap_instead_of_scanpath`
+- `ablation_no_teacher_distillation`
+- `ablation_no_local_stream`
+- `ablation_fixed_k`
+
+#### Control
+- `control_shuffled_gaze`
+
+### Current Validation Status
+Validated locally on **March 20, 2026**:
+
+1. `pytest -q` -> `9 passed`
+2. `python scripts/smoke_test.py` -> passed
+3. short dummy training passes completed for:
+   - `exp_vit_b16_dummy_short`
+   - `exp_seqdet_no_gaze_dummy_short`
+   - `exp_diffscanauth_dummy_short`
+4. example metrics, predictions, checkpoints, tables, and figures were generated under `outputs/`
+
+### Environment
+
+#### Official target
+- Python `3.11`
+- PyTorch `2.x`
+- PyTorch Lightning
+- Hydra / OmegaConf
+- timm
+- torchvision
+- torchmetrics
+- scikit-learn
+- pandas
+- numpy
+- pillow / opencv-python
+- matplotlib / seaborn
+- einops
+- tqdm
+
+#### Optional
+- transformers
+- mamba-ssm
+- wandb
+
+#### Local note
+The repository target remains **Python 3.11**, but the recent local validation on this machine also passed under the existing Miniforge Python `3.12` environment. For formal experiments, keep Python `3.11` as the paper environment.
+
+### Installation
 ```bash
 python3.11 -m venv .venv
 source .venv/bin/activate
@@ -32,51 +94,120 @@ pip install -U pip
 pip install -r requirements.txt
 ```
 
-#### 2.2 Full Pipeline (Recommended)
+### Quick Start
+
+#### Full preprocessing pipeline
 ```bash
 python scripts/inspect_dataset.py
 python scripts/build_metadata.py
-python scripts/preprocess_eye_tracking.py
+python scripts/preprocess_eye_tracking.py --force-rebuild-eye-tracking
 python scripts/make_splits.py
 python scripts/smoke_test.py
 ```
 
-#### 2.3 Train Experiments
+#### Train main experiments
 ```bash
-python scripts/train.py experiment=baseline_static
-python scripts/train.py experiment=baseline_heatmap
-python scripts/train.py experiment=seq_gaze_detector
-python scripts/train.py experiment=seq_gaze_stop
+python scripts/train.py experiment=exp_vit_b16
+python scripts/train.py experiment=exp_aide_style
+python scripts/train.py experiment=exp_vit_heatmap
+python scripts/train.py experiment=exp_seqdet_no_gaze
+python scripts/train.py experiment=exp_diffscanauth
 ```
 
-#### 2.4 Evaluate / Predict / Analyze
+#### Train ablations and control
 ```bash
-python scripts/evaluate.py --experiment baseline_static --ckpt outputs/checkpoints/exp_static_vit/last.ckpt
-python scripts/predict.py --experiment seq_gaze_detector --ckpt outputs/checkpoints/exp_seq_gaze_fixedK/last.ckpt --split test
+python scripts/train.py experiment=ablation_no_gaze_supervision
+python scripts/train.py experiment=ablation_heatmap_instead_of_scanpath
+python scripts/train.py experiment=ablation_no_teacher_distillation
+python scripts/train.py experiment=ablation_no_local_stream
+python scripts/train.py experiment=ablation_fixed_k
+python scripts/train.py experiment=control_shuffled_gaze
+```
+
+#### Evaluate / predict / analyze
+```bash
+python scripts/evaluate.py --experiment exp_diffscanauth --ckpt outputs/checkpoints/exp_diffscanauth/last.ckpt
+python scripts/predict.py --experiment exp_diffscanauth --ckpt outputs/checkpoints/exp_diffscanauth/last.ckpt --split test
 python scripts/analyze_results.py
+python scripts/make_tables.py
+python scripts/make_confidence_curve.py --predictions outputs/predictions/exp_diffscanauth_test_predictions.csv
+python scripts/make_qualitative_figures.py --ours outputs/predictions/exp_diffscanauth_test_predictions.csv --no-gaze outputs/predictions/exp_seqdet_no_gaze_test_predictions.csv
 ```
 
-#### 2.5 Tests
+#### Run the whole suite sequentially
 ```bash
-pytest -q
+python scripts/run_all_experiments.py --epochs 1
 ```
 
-### 3. Data Schema
+### Stage-Wise DiffScanAuth Training
+The paper training protocol is supported explicitly.
 
-#### 3.1 `metadata.csv`
-Expected columns:
+#### Stage 1: teacher pretraining
+```bash
+python scripts/train.py \
+  experiment=exp_diffscanauth \
+  experiment.name=exp_diffscanauth_teacher_stage1 \
+  model.training_stage=teacher \
+  model.use_teacher=true \
+  model.use_teacher_distill=false
+```
+
+#### Stage 2: student + reader + accumulator + classifier
+Load encoder + teacher weights from stage 1:
+```bash
+python scripts/train.py \
+  experiment=exp_diffscanauth \
+  experiment.name=exp_diffscanauth_stage2 \
+  model.training_stage=student \
+  model.teacher_ckpt=outputs/checkpoints/exp_diffscanauth_teacher_stage1/last.ckpt \
+  model.freeze_teacher=true
+```
+
+#### Stage 3: optional efficiency refinement
+Load full model weights from stage 2:
+```bash
+python scripts/train.py \
+  experiment=exp_diffscanauth \
+  experiment.name=exp_diffscanauth_stage3_refine \
+  model.training_stage=refine \
+  model.init_from_ckpt=outputs/checkpoints/exp_diffscanauth_stage2/last.ckpt \
+  model.use_rl=true \
+  model.loss_rl=0.05
+```
+
+### Dummy-Data Mode
+You do **not** need to upload the real dataset before using the repo.
+
+If `data/raw/` does not contain a valid dataset:
+
+1. synthetic images are generated
+2. synthetic metadata is built
+3. synthetic eye-tracking trajectories are generated
+4. splits and heatmaps are built
+5. the entire training/evaluation stack remains runnable
+
+Important commands:
+```bash
+python scripts/build_metadata.py --allow-synthetic --synthetic-num-images 120
+python scripts/preprocess_eye_tracking.py --allow-synthetic --force-rebuild-eye-tracking
+```
+
+### Real Data Schema
+
+#### `metadata.csv`
+Required columns:
 - `image_id`
 - `image_path`
-- `label` (0/1)
+- `label`
 - `scene`
-- `source_type` (`real`/`aigc`)
+- `source_type`
 - `generator`
 - `width`
 - `height`
 - `split`
 
-#### 3.2 `eye_tracking.csv`
-Expected columns:
+#### `eye_tracking.csv`
+Required columns:
 - `subject_id`
 - `image_id`
 - `t`
@@ -87,8 +218,8 @@ Expected columns:
 - `validity`
 - `pupil`
 
-#### 3.3 `processed_fixations.csv`
-Expected columns:
+#### `processed_fixations.csv`
+Required columns:
 - `subject_id`
 - `image_id`
 - `fixation_idx`
@@ -96,221 +227,313 @@ Expected columns:
 - `y_norm`
 - `duration_norm`
 - `duration_ms`
+- `delta_x`
+- `delta_y`
 - `patch_index`
 - `split`
 
-### 4. Leakage Prevention Rule
-Splits are generated by `image_id` as the minimum unit:
-- all subjects' gaze records for one image stay in the same split
-- no same-image cross-split leakage is allowed
+### Data Split Safety
+Splitting is done by **image_id**, not by subject-row.
 
-Stratification fallback order:
-1. `label + scene + generator`
-2. `label + scene`
-3. `label`
-4. random fallback (logged)
+This guarantees:
 
-Report file:
+1. all subjects for the same image stay in the same split
+2. train/val/test leakage across the same image is prevented
+3. stratification is attempted in this order:
+   - `label + scene + generator`
+   - `label + scene`
+   - `label`
+   - random fallback with downgrade logging
+
+Artifacts:
+- `data/splits/train.csv`
+- `data/splits/val.csv`
+- `data/splits/test.csv`
 - `data/splits/split_report.json`
 
-### 5. Experiment Outputs
-- logs: `outputs/logs/`
-- checkpoints: `outputs/checkpoints/`
-- metrics: `outputs/metrics/`
-- predictions: `outputs/predictions/`
-- figures: `outputs/figures/`
+### Fallback Policy
+The code is paper-oriented, but robust to limited environments.
 
-### 6. Project Structure and File-by-File Function
+1. Global semantic stream
+   - preferred: SigLIP2-like adapter
+   - fallback: timm transformer / torchvision-compatible backbone
+2. Local artifact stream
+   - preferred: DINOv2-like dense adapter
+   - fallback: timm dense backbone / ConvNeXt / ResNet feature map
+3. Accumulator
+   - preferred: Mamba-style backend when available
+   - fallback: GRU
+4. Diffusion teacher
+   - implemented in-repo as a lightweight, real working denoising teacher
+5. Logging
+   - wandb if available and configured
+   - otherwise TensorBoard
+   - otherwise CSV logger
 
-#### 6.1 Root Files
-| File | Purpose |
-|---|---|
-| `README.md` | bilingual user/developer guide |
-| `requirements.txt` | dependency list |
-| `pyproject.toml` | project metadata and pytest config |
-| `.gitignore` | ignored files and artifacts |
+### Output Layout
+- `outputs/logs/`: Lightning logs
+- `outputs/checkpoints/`: model checkpoints
+- `outputs/metrics/`: JSON/CSV summaries
+- `outputs/predictions/`: per-sample predictions
+- `outputs/figures/`: ROC, PR, confusion matrices, confidence curves, qualitative scanpaths
 
-#### 6.2 Config Files (`configs/`)
-| File | Purpose |
-|---|---|
-| `configs/config.yaml` | global Hydra entry config |
-| `configs/data/default.yaml` | data paths, preprocessing, split ratio, dataloader |
-| `configs/model/baseline_static.yaml` | Baseline A model and optimizer config |
-| `configs/model/baseline_heatmap.yaml` | Baseline B model and optimizer config |
-| `configs/model/seq_gaze_detector.yaml` | main sequential model config |
-| `configs/trainer/default.yaml` | Lightning trainer settings |
-| `configs/experiment/baseline_static.yaml` | experiment preset for static baseline |
-| `configs/experiment/baseline_heatmap.yaml` | experiment preset for heatmap baseline |
-| `configs/experiment/seq_gaze_detector.yaml` | experiment preset for fixed-K sequential model |
-| `configs/experiment/seq_gaze_stop.yaml` | experiment preset for learned-stop sequential model |
+### How To Replace Dummy Data With Real Data Later
+When your real dataset is ready:
 
-#### 6.3 Scripts (`scripts/`)
-| File | Purpose |
-|---|---|
-| `scripts/inspect_dataset.py` | scan raw data and dump inspection JSON |
-| `scripts/build_metadata.py` | build standardized `metadata.csv` |
-| `scripts/preprocess_eye_tracking.py` | standardize/clean gaze and produce `processed_fixations.csv` |
-| `scripts/make_splits.py` | create leakage-safe splits + split report + heatmaps |
-| `scripts/train.py` | train + test + save metrics/predictions/figures |
-| `scripts/evaluate.py` | evaluate checkpoint on a selected split |
-| `scripts/predict.py` | run inference-like checkpoint test and export predictions |
-| `scripts/analyze_results.py` | aggregate prediction CSVs into analysis metrics and plots |
-| `scripts/smoke_test.py` | end-to-end fast-dev run for all model families |
-
-#### 6.4 Dataset Modules (`src/datasets/`)
-| File | Purpose |
-|---|---|
-| `src/datasets/dataset_schema.py` | dataclass schema definitions |
-| `src/datasets/dataset_adapter.py` | raw data auto-adaptation + synthetic fallback |
-| `src/datasets/image_dataset.py` | image-level dataset (static/heatmap models) |
-| `src/datasets/gaze_dataset.py` | subject-image fixation sequence dataset |
-| `src/datasets/collate.py` | collate functions for dataloaders |
-| `src/datasets/transforms.py` | image transforms (gaze-safe spatial policy) |
-| `src/datasets/split_utils.py` | stratified split logic with leakage checks |
-
-#### 6.5 Feature Modules (`src/features/`)
-| File | Purpose |
-|---|---|
-| `src/features/gaze_processing.py` | gaze normalization, fixation conversion, cleaning |
-| `src/features/heatmap.py` | fixation-to-heatmap generation |
-| `src/features/fixation_tokenizer.py` | patch tokenization and patch histogram helpers |
-
-#### 6.6 Model Modules (`src/models/`)
-| File | Purpose |
-|---|---|
-| `src/models/backbones.py` | timm-first backbone wrapper with torchvision fallback |
-| `src/models/baseline_static.py` | Baseline A model |
-| `src/models/baseline_heatmap.py` | Baseline B joint cls + heatmap model |
-| `src/models/seq_gaze_detector.py` | main gaze-supervised sequential detector |
-
-#### 6.7 Model Submodules (`src/models/modules/`)
-| File | Purpose |
-|---|---|
-| `src/models/modules/gaze_policy.py` | causal gaze policy network |
-| `src/models/modules/glimpse_reader.py` | local evidence reader via bilinear sampling |
-| `src/models/modules/accumulator.py` | evidence accumulator (GRU / optional mamba fallback) |
-| `src/models/modules/heads.py` | classification head definitions |
-| `src/models/modules/losses.py` | sequential loss decomposition and weighting |
-
-#### 6.8 Lightning Modules (`src/lightning/`)
-| File | Purpose |
-|---|---|
-| `src/lightning/lit_static.py` | Lightning module for Baseline A |
-| `src/lightning/lit_heatmap.py` | Lightning module for Baseline B |
-| `src/lightning/lit_seq.py` | Lightning module for sequential main model |
-
-#### 6.9 Evaluation Modules (`src/evaluation/`)
-| File | Purpose |
-|---|---|
-| `src/evaluation/metrics_classification.py` | accuracy/precision/recall/F1/AUROC/AUPRC + confusion |
-| `src/evaluation/metrics_gaze.py` | fixation and duration error metrics |
-| `src/evaluation/calibration.py` | ECE and Brier score |
-| `src/evaluation/bootstrapping.py` | bootstrap confidence intervals |
-
-#### 6.10 Utility Modules (`src/utils/`)
-| File | Purpose |
-|---|---|
-| `src/utils/seed.py` | reproducibility seed setup |
-| `src/utils/io.py` | JSON/CSV/path helpers |
-| `src/utils/logging.py` | logger helper |
-| `src/utils/plotting.py` | confusion matrix and ROC plotting |
-| `src/utils/registry.py` | lightweight registry placeholders |
-| `src/utils/pipeline.py` | reusable data prep + dataloader + module builders |
-
-#### 6.11 Tests (`tests/`)
-| File | Purpose |
-|---|---|
-| `tests/test_dataset.py` | synthetic data pipeline integrity |
-| `tests/test_splits.py` | leakage-safe split validation |
-| `tests/test_forward.py` | forward-shape checks for all model families |
-| `tests/test_smoke.py` | lightweight smoke-level init/forward checks |
-
-### 7. Detailed Usage Tutorial
-
-#### 7.1 Stage A: Prepare Data
-1. Put your real files under `data/raw/`.
-2. Run inspection:
+1. place images and raw tables anywhere under `data/raw/`
+2. rerun:
    ```bash
    python scripts/inspect_dataset.py
-   ```
-3. Build metadata:
-   ```bash
    python scripts/build_metadata.py
-   ```
-4. Preprocess eye-tracking:
-   ```bash
-   python scripts/preprocess_eye_tracking.py
-   ```
-5. Make leakage-safe splits:
-   ```bash
+   python scripts/preprocess_eye_tracking.py --force-rebuild-eye-tracking
    python scripts/make_splits.py
    ```
+3. inspect:
+   - `data/processed/metadata.csv`
+   - `data/processed/eye_tracking.csv`
+   - `data/processed/processed_fixations.csv`
+   - `data/splits/split_report.json`
+4. if your raw format differs, adapt only `src/datasets/dataset_adapter.py` and rerun the same pipeline
 
-#### 7.2 Stage B: Verify Pipeline
-```bash
-python scripts/smoke_test.py
-```
+### File-By-File Guide
 
-#### 7.3 Stage C: Train
-- Static baseline:
-  ```bash
-  python scripts/train.py experiment=baseline_static
-  ```
-- Heatmap baseline:
-  ```bash
-  python scripts/train.py experiment=baseline_heatmap
-  ```
-- Sequential main model (fixed K):
-  ```bash
-  python scripts/train.py experiment=seq_gaze_detector
-  ```
-- Sequential main model (learned stop):
-  ```bash
-  python scripts/train.py experiment=seq_gaze_stop
-  ```
+#### Root files
+| File | Function |
+|---|---|
+| `README.md` | bilingual project manual and usage guide |
+| `requirements.txt` | dependency list |
+| `pyproject.toml` | project metadata and pytest configuration |
+| `.gitignore` | ignores outputs, caches, and local artifacts |
 
-#### 7.4 Stage D: Evaluate / Predict / Analyze
-- Evaluate:
-  ```bash
-  python scripts/evaluate.py --experiment seq_gaze_detector --ckpt outputs/checkpoints/exp_seq_gaze_fixedK/last.ckpt
-  ```
-- Predict export:
-  ```bash
-  python scripts/predict.py --experiment seq_gaze_detector --ckpt outputs/checkpoints/exp_seq_gaze_fixedK/last.ckpt --split test
-  ```
-- Analyze all predictions:
-  ```bash
-  python scripts/analyze_results.py
-  ```
+#### `configs/`
+| File | Function |
+|---|---|
+| `configs/config.yaml` | Hydra root config; default entry uses `diffscanauth` |
+| `configs/data/default.yaml` | dataset paths, preprocessing settings, split ratios, loader settings, synthetic-data knobs |
+| `configs/trainer/default.yaml` | shared Lightning trainer defaults |
+| `configs/model/vit_b16.yaml` | final ViT-B/16 baseline config |
+| `configs/model/aide_style.yaml` | final AIDE-style baseline config |
+| `configs/model/vit_gaze_heatmap.yaml` | final ViT + heatmap supervision config |
+| `configs/model/seqdet_no_gaze.yaml` | final sequential no-human-gaze baseline config |
+| `configs/model/diffscanauth.yaml` | final full DiffScanAuth config |
+| `configs/model/baseline_static.yaml` | legacy scaffold config kept for backward compatibility |
+| `configs/model/baseline_heatmap.yaml` | legacy scaffold config kept for backward compatibility |
+| `configs/model/seq_gaze_detector.yaml` | legacy scaffold config kept for backward compatibility |
+| `configs/experiment/exp_vit_b16.yaml` | experiment preset for ViT-B/16 |
+| `configs/experiment/exp_aide_style.yaml` | experiment preset for AIDE-style detector |
+| `configs/experiment/exp_vit_heatmap.yaml` | experiment preset for ViT + gaze heatmap |
+| `configs/experiment/exp_seqdet_no_gaze.yaml` | experiment preset for sequential no-gaze baseline |
+| `configs/experiment/exp_diffscanauth.yaml` | experiment preset for full DiffScanAuth |
+| `configs/experiment/ablation_no_gaze_supervision.yaml` | ablation: remove gaze supervision |
+| `configs/experiment/ablation_heatmap_instead_of_scanpath.yaml` | ablation: heatmap supervision instead of scanpath supervision |
+| `configs/experiment/ablation_no_teacher_distillation.yaml` | ablation: remove diffusion-teacher distillation |
+| `configs/experiment/ablation_no_local_stream.yaml` | ablation: remove local artifact stream |
+| `configs/experiment/ablation_fixed_k.yaml` | ablation: fixed-K instead of learned stop |
+| `configs/experiment/control_shuffled_gaze.yaml` | control: shuffled gaze trajectories |
+| `configs/experiment/baseline_static.yaml` | legacy experiment preset kept for compatibility |
+| `configs/experiment/baseline_heatmap.yaml` | legacy experiment preset kept for compatibility |
+| `configs/experiment/seq_gaze_detector.yaml` | legacy fixed-K sequential preset |
+| `configs/experiment/seq_gaze_stop.yaml` | legacy learned-stop sequential preset |
 
-### 8. Practical Notes
-- If timm pretrained weights cannot be downloaded, the code falls back to torchvision backbone.
-- If optional modules (e.g., mamba-ssm) are unavailable, code falls back to GRU.
-- This repo is designed to stay runnable even in restricted/offline environments.
+#### `scripts/`
+| File | Function |
+|---|---|
+| `scripts/inspect_dataset.py` | scans `data/raw/` and saves a structural inspection report |
+| `scripts/build_metadata.py` | builds standardized `metadata.csv` from raw images or synthetic fallback |
+| `scripts/preprocess_eye_tracking.py` | normalizes eye-tracking and produces `processed_fixations.csv` |
+| `scripts/make_splits.py` | creates leakage-safe train/val/test splits and heatmaps |
+| `scripts/train.py` | Hydra training entrypoint; also runs test and exports metrics/predictions/figures |
+| `scripts/evaluate.py` | loads a checkpoint and evaluates it on `train` / `val` / `test` |
+| `scripts/predict.py` | exports prediction CSVs from a checkpoint |
+| `scripts/analyze_results.py` | aggregates prediction CSVs into metrics and plots |
+| `scripts/make_tables.py` | builds summary tables from metrics JSON files |
+| `scripts/make_qualitative_figures.py` | produces human vs ours vs no-gaze scanpath figure panels |
+| `scripts/make_confidence_curve.py` | plots confidence-over-time from sequential predictions |
+| `scripts/run_all_experiments.py` | sequentially runs the full main-paper experiment suite |
+| `scripts/smoke_test.py` | fast executable regression test over all final model families |
+
+#### `src/`
+| File | Function |
+|---|---|
+| `src/__init__.py` | package marker |
+
+#### `src/datasets/`
+| File | Function |
+|---|---|
+| `src/datasets/dataset_schema.py` | simple schema definitions and typed records |
+| `src/datasets/dataset_adapter.py` | raw-data scanner, metadata builder, synthetic-data generator, eye-tracking adapter |
+| `src/datasets/image_dataset.py` | image-level dataset for static classifiers |
+| `src/datasets/gaze_dataset.py` | subject-image sequential gaze dataset with optional shuffled-gaze control |
+| `src/datasets/collate.py` | batch collation for static and sequential models |
+| `src/datasets/transforms.py` | gaze-safe image transforms |
+| `src/datasets/split_utils.py` | image-level stratified split logic and leakage checks |
+
+#### `src/features/`
+| File | Function |
+|---|---|
+| `src/features/gaze_processing.py` | normalization, fixation conversion, duration normalization, delta computation |
+| `src/features/heatmap.py` | heatmap generation and serialization |
+| `src/features/fixation_tokenizer.py` | patch tokenization and patch histogram helpers |
+
+#### `src/models/`
+| File | Function |
+|---|---|
+| `src/models/backbones.py` | timm-first backbone wrappers and fallback feature extraction |
+| `src/models/vit_b16_classifier.py` | final ViT-B/16 static baseline |
+| `src/models/aide_style_detector.py` | final AIDE-style static forensic detector |
+| `src/models/vit_heatmap_model.py` | final ViT + heatmap auxiliary model |
+| `src/models/seqdet_no_gaze.py` | final sequential detector without human gaze supervision |
+| `src/models/diffscanauth.py` | final DiffScanAuth model |
+| `src/models/baseline_static.py` | legacy scaffold static baseline |
+| `src/models/baseline_heatmap.py` | legacy scaffold heatmap baseline |
+| `src/models/seq_gaze_detector.py` | legacy scaffold sequential detector |
+| `src/models/__init__.py` | package marker |
+
+#### `src/models/modules/`
+| File | Function |
+|---|---|
+| `src/models/modules/dual_stream_encoder.py` | global semantic stream + local artifact stream wrapper |
+| `src/models/modules/diffusion_teacher.py` | working lightweight diffusion-style scanpath teacher |
+| `src/models/modules/gaze_student.py` | causal fixation policy student |
+| `src/models/modules/foveated_reader.py` | final foveated evidence reader |
+| `src/models/modules/accumulator.py` | GRU / Mamba-style evidence accumulator |
+| `src/models/modules/stop_head.py` | learned stop head |
+| `src/models/modules/losses.py` | final paper-aligned loss bundle |
+| `src/models/modules/gaze_policy.py` | legacy policy module kept for compatibility |
+| `src/models/modules/glimpse_reader.py` | legacy glimpse reader kept for compatibility |
+| `src/models/modules/heads.py` | classification and helper heads |
+| `src/models/modules/__init__.py` | package marker |
+
+#### `src/lightning/`
+| File | Function |
+|---|---|
+| `src/lightning/lit_vit.py` | Lightning wrapper for ViT-B/16 |
+| `src/lightning/lit_aide.py` | Lightning wrapper for AIDE-style detector |
+| `src/lightning/lit_heatmap.py` | Lightning wrapper for heatmap-supervised static model |
+| `src/lightning/lit_seqdet.py` | Lightning wrapper for sequential no-gaze baseline |
+| `src/lightning/lit_diffscanauth.py` | Lightning wrapper for full DiffScanAuth |
+| `src/lightning/lit_seq_base.py` | shared sequential training logic, checkpoint-loading utilities, logging/export |
+| `src/lightning/lit_static.py` | legacy static baseline Lightning wrapper |
+| `src/lightning/lit_seq.py` | legacy sequential Lightning wrapper |
+| `src/lightning/__init__.py` | package marker |
+
+#### `src/evaluation/`
+| File | Function |
+|---|---|
+| `src/evaluation/metrics_classification.py` | classification metrics, calibration metrics, confusion matrix bundle |
+| `src/evaluation/metrics_gaze.py` | sequential decision-step, scanpath, and distance metrics |
+| `src/evaluation/calibration.py` | ECE and Brier helpers |
+| `src/evaluation/bootstrapping.py` | bootstrap confidence intervals |
+| `src/evaluation/__init__.py` | package marker |
+
+#### `src/utils/`
+| File | Function |
+|---|---|
+| `src/utils/pipeline.py` | reusable end-to-end builders for metadata, preprocessing, dataloaders, and modules |
+| `src/utils/plotting.py` | confusion, ROC, PR, confidence, and scanpath visualization helpers |
+| `src/utils/seed.py` | deterministic seeding |
+| `src/utils/io.py` | path, CSV, JSON, and directory helpers |
+| `src/utils/logging.py` | shared logger helper |
+| `src/utils/registry.py` | lightweight registry placeholder |
+| `src/utils/__init__.py` | package marker |
+
+#### `tests/`
+| File | Function |
+|---|---|
+| `tests/test_dataset.py` | end-to-end synthetic data pipeline test |
+| `tests/test_splits.py` | split leakage test |
+| `tests/test_forward.py` | forward tests for static, sequential, and checkpoint-loading paths |
+| `tests/test_smoke.py` | smoke-level executable regression test |
+
+### Known Limitations
+1. Exact SigLIP2-NaFlex and DINOv2 pretrained weights are exposed through adapters/fallback names, but offline environments may fall back to lighter timm/torchvision backbones.
+2. The diffusion teacher is intentionally lightweight and practical rather than a very heavy diffusion transformer.
+3. The Mamba path remains optional; GRU is the default stable fallback.
+4. Dummy-data metrics are only pipeline validation numbers, not paper numbers.
 
 ---
 
-## 中文
+## 中文说明
 
-### 1. 项目功能
-DiffScanAuth 是一个可复现实验代码库，用于完成 **AIGC/真实图像二分类**，同时利用：
-- 图像信息
-- 人类眼动信息（fixation/gaze）
+### 项目概览
+本仓库是论文 **DiffScanAuth: Human-Gaze-Supervised Sequential Evidence Accumulation for AI-Generated Image Detection** 的可执行实验代码库。
 
-包含完整工程链路：
-1. 自动数据扫描与格式适配
-2. metadata 生成与眼动预处理
-3. 严格防泄漏划分（按 image_id）
-4. 三类模型（静态 / 热图辅助 / 时序 gaze 主模型）
-5. 训练、评估、预测、结果分析脚本
-6. smoke test + 单元测试
-7. Hydra 配置化实验管理
+当前版本不是最初的脚手架，而是已经升级到与论文结构对齐的实现，包含：
 
-若尚未放入真实数据，系统会自动生成 synthetic 数据，保证流程可直接运行。
+1. 论文主方法
+2. 论文主 baseline
+3. 论文 ablation
+4. shuffled-gaze 对照实验
+5. 在真实数据尚未上传前可直接运行的 dummy-data 模式
+6. 训练、验证、测试、预测、可视化、结果分析全流程
+7. 支持 teacher 预训练、student 主训练、可选效率微调的三阶段训练
 
-### 2. 快速开始
+### 已实现内容
 
-#### 2.1 环境安装
+#### 主方法
+- `DiffScanAuth`
+  - 双流视觉编码器
+  - diffusion scanpath teacher
+  - causal gaze student
+  - foveated evidence reader
+  - evidence accumulator
+  - learned stop / fixed-K 两种模式
+
+#### 主 baseline
+- `exp_vit_b16`
+- `exp_aide_style`
+- `exp_vit_heatmap`
+- `exp_seqdet_no_gaze`
+- `exp_diffscanauth`
+
+#### Ablation
+- `ablation_no_gaze_supervision`
+- `ablation_heatmap_instead_of_scanpath`
+- `ablation_no_teacher_distillation`
+- `ablation_no_local_stream`
+- `ablation_fixed_k`
+
+#### 对照实验
+- `control_shuffled_gaze`
+
+### 当前验证状态
+截至 **2026 年 3 月 20 日**，本地已经完成：
+
+1. `pytest -q` -> `9 passed`
+2. `python scripts/smoke_test.py` -> 通过
+3. 以下三个 dummy 短训练已实际跑通：
+   - `exp_vit_b16_dummy_short`
+   - `exp_seqdet_no_gaze_dummy_short`
+   - `exp_diffscanauth_dummy_short`
+4. `outputs/` 下已经生成示例 checkpoint、prediction、metrics、tables、figures
+
+### 环境要求
+
+#### 官方目标环境
+- Python `3.11`
+- PyTorch `2.x`
+- PyTorch Lightning
+- Hydra / OmegaConf
+- timm
+- torchvision
+- torchmetrics
+- scikit-learn
+- pandas
+- numpy
+- pillow / opencv-python
+- matplotlib / seaborn
+- einops
+- tqdm
+
+#### 可选依赖
+- transformers
+- mamba-ssm
+- wandb
+
+#### 本地说明
+论文目标环境仍然建议使用 **Python 3.11**。当前这台机器上最近一次回归验证是在已有的 Miniforge Python `3.12` 环境中完成的，也能通过，但正式实验仍建议按论文环境固定到 `3.11`。
+
+### 安装
 ```bash
 python3.11 -m venv .venv
 source .venv/bin/activate
@@ -318,49 +541,120 @@ pip install -U pip
 pip install -r requirements.txt
 ```
 
-#### 2.2 完整流程（推荐）
+### 快速开始
+
+#### 完整数据准备流程
 ```bash
 python scripts/inspect_dataset.py
 python scripts/build_metadata.py
-python scripts/preprocess_eye_tracking.py
+python scripts/preprocess_eye_tracking.py --force-rebuild-eye-tracking
 python scripts/make_splits.py
 python scripts/smoke_test.py
 ```
 
-#### 2.3 训练实验
+#### 训练主要实验
 ```bash
-python scripts/train.py experiment=baseline_static
-python scripts/train.py experiment=baseline_heatmap
-python scripts/train.py experiment=seq_gaze_detector
-python scripts/train.py experiment=seq_gaze_stop
+python scripts/train.py experiment=exp_vit_b16
+python scripts/train.py experiment=exp_aide_style
+python scripts/train.py experiment=exp_vit_heatmap
+python scripts/train.py experiment=exp_seqdet_no_gaze
+python scripts/train.py experiment=exp_diffscanauth
 ```
 
-#### 2.4 评估 / 预测 / 分析
+#### 训练 ablation 和 control
 ```bash
-python scripts/evaluate.py --experiment baseline_static --ckpt outputs/checkpoints/exp_static_vit/last.ckpt
-python scripts/predict.py --experiment seq_gaze_detector --ckpt outputs/checkpoints/exp_seq_gaze_fixedK/last.ckpt --split test
+python scripts/train.py experiment=ablation_no_gaze_supervision
+python scripts/train.py experiment=ablation_heatmap_instead_of_scanpath
+python scripts/train.py experiment=ablation_no_teacher_distillation
+python scripts/train.py experiment=ablation_no_local_stream
+python scripts/train.py experiment=ablation_fixed_k
+python scripts/train.py experiment=control_shuffled_gaze
+```
+
+#### 评估 / 预测 / 分析
+```bash
+python scripts/evaluate.py --experiment exp_diffscanauth --ckpt outputs/checkpoints/exp_diffscanauth/last.ckpt
+python scripts/predict.py --experiment exp_diffscanauth --ckpt outputs/checkpoints/exp_diffscanauth/last.ckpt --split test
 python scripts/analyze_results.py
+python scripts/make_tables.py
+python scripts/make_confidence_curve.py --predictions outputs/predictions/exp_diffscanauth_test_predictions.csv
+python scripts/make_qualitative_figures.py --ours outputs/predictions/exp_diffscanauth_test_predictions.csv --no-gaze outputs/predictions/exp_seqdet_no_gaze_test_predictions.csv
 ```
 
-#### 2.5 单元测试
+#### 顺序跑完整实验集
 ```bash
-pytest -q
+python scripts/run_all_experiments.py --epochs 1
 ```
 
-### 3. 数据统一字段
+### DiffScanAuth 三阶段训练
+当前代码已经支持论文里的三阶段训练。
 
-#### 3.1 `metadata.csv`
+#### 阶段 1：teacher 预训练
+```bash
+python scripts/train.py \
+  experiment=exp_diffscanauth \
+  experiment.name=exp_diffscanauth_teacher_stage1 \
+  model.training_stage=teacher \
+  model.use_teacher=true \
+  model.use_teacher_distill=false
+```
+
+#### 阶段 2：student + reader + accumulator + classifier
+从阶段 1 checkpoint 中加载 encoder + teacher：
+```bash
+python scripts/train.py \
+  experiment=exp_diffscanauth \
+  experiment.name=exp_diffscanauth_stage2 \
+  model.training_stage=student \
+  model.teacher_ckpt=outputs/checkpoints/exp_diffscanauth_teacher_stage1/last.ckpt \
+  model.freeze_teacher=true
+```
+
+#### 阶段 3：可选效率微调
+从阶段 2 加载完整模型：
+```bash
+python scripts/train.py \
+  experiment=exp_diffscanauth \
+  experiment.name=exp_diffscanauth_stage3_refine \
+  model.training_stage=refine \
+  model.init_from_ckpt=outputs/checkpoints/exp_diffscanauth_stage2/last.ckpt \
+  model.use_rl=true \
+  model.loss_rl=0.05
+```
+
+### Dummy 数据模式
+即使你现在还没有上传真实数据，这个仓库也能直接运行。
+
+当 `data/raw/` 下没有有效数据时，系统会自动：
+
+1. 生成 synthetic 图像
+2. 生成 synthetic metadata
+3. 生成 synthetic 眼动轨迹
+4. 生成 split 和 heatmap
+5. 保证训练、评估、分析脚本都能执行
+
+常用命令：
+```bash
+python scripts/build_metadata.py --allow-synthetic --synthetic-num-images 120
+python scripts/preprocess_eye_tracking.py --allow-synthetic --force-rebuild-eye-tracking
+```
+
+### 统一数据 Schema
+
+#### `metadata.csv`
+至少需要这些列：
 - `image_id`
 - `image_path`
-- `label`（0/1）
+- `label`
 - `scene`
-- `source_type`（`real`/`aigc`）
+- `source_type`
 - `generator`
 - `width`
 - `height`
 - `split`
 
-#### 3.2 `eye_tracking.csv`
+#### `eye_tracking.csv`
+至少需要这些列：
 - `subject_id`
 - `image_id`
 - `t`
@@ -371,7 +665,8 @@ pytest -q
 - `validity`
 - `pupil`
 
-#### 3.3 `processed_fixations.csv`
+#### `processed_fixations.csv`
+至少需要这些列：
 - `subject_id`
 - `image_id`
 - `fixation_idx`
@@ -379,193 +674,226 @@ pytest -q
 - `y_norm`
 - `duration_norm`
 - `duration_ms`
+- `delta_x`
+- `delta_y`
 - `patch_index`
 - `split`
 
-### 4. 防泄漏划分规则
-划分最小单元是 `image_id`：
-- 同一图片的所有被试眼动必须在同一个 split
-- 不允许同图像跨 train/val/test
+### 防泄漏划分规则
+划分单位是 **image_id**，不是被试行级别。
 
-分层降级顺序：
-1. `label + scene + generator`
-2. `label + scene`
-3. `label`
-4. 随机（会在报告中记录）
+这意味着：
 
-报告文件：`data/splits/split_report.json`
+1. 同一张图的所有被试都在同一个 split
+2. 不会出现同图跨 train/val/test 泄漏
+3. 分层顺序为：
+   - `label + scene + generator`
+   - `label + scene`
+   - `label`
+   - 随机回退，并记录日志
 
-### 5. 输出目录
-- 日志：`outputs/logs/`
-- 权重：`outputs/checkpoints/`
-- 指标：`outputs/metrics/`
-- 预测：`outputs/predictions/`
-- 图表：`outputs/figures/`
+输出文件：
+- `data/splits/train.csv`
+- `data/splits/val.csv`
+- `data/splits/test.csv`
+- `data/splits/split_report.json`
 
-### 6. 文件功能总览（逐文件）
+### 回退策略
+代码优先对齐论文，但也保证在受限环境下可运行。
 
-#### 6.1 根目录文件
-| 文件 | 功能 |
-|---|---|
-| `README.md` | 双语使用与开发说明文档 |
-| `requirements.txt` | Python 依赖清单 |
-| `pyproject.toml` | 项目元信息与 pytest 配置 |
-| `.gitignore` | Git 忽略规则 |
+1. 全局语义流
+   - 首选 SigLIP2 风格适配器
+   - 回退到 timm transformer / torchvision backbone
+2. 局部伪影流
+   - 首选 DINOv2 风格 dense adapter
+   - 回退到 timm dense backbone / ConvNeXt / ResNet
+3. 累积器
+   - 若可用，支持 Mamba 风格
+   - 默认稳定回退为 GRU
+4. Diffusion teacher
+   - 仓库内已经实现轻量但真实可训练的 teacher，不是占位符
+5. 日志
+   - 优先 wandb
+   - 否则 TensorBoard
+   - 再否则 CSV logger
 
-#### 6.2 配置文件（`configs/`）
-| 文件 | 功能 |
-|---|---|
-| `configs/config.yaml` | Hydra 全局入口配置 |
-| `configs/data/default.yaml` | 数据路径、预处理参数、划分比例、DataLoader 参数 |
-| `configs/model/baseline_static.yaml` | Baseline A（静态分类）模型与优化器配置 |
-| `configs/model/baseline_heatmap.yaml` | Baseline B（热图辅助）模型与优化器配置 |
-| `configs/model/seq_gaze_detector.yaml` | 主模型（时序 gaze）配置 |
-| `configs/trainer/default.yaml` | Lightning 训练器配置 |
-| `configs/experiment/baseline_static.yaml` | Baseline A 实验预设 |
-| `configs/experiment/baseline_heatmap.yaml` | Baseline B 实验预设 |
-| `configs/experiment/seq_gaze_detector.yaml` | 主模型 fixed-K 实验预设 |
-| `configs/experiment/seq_gaze_stop.yaml` | 主模型 learned-stop 实验预设 |
+### 输出目录
+- `outputs/logs/`
+- `outputs/checkpoints/`
+- `outputs/metrics/`
+- `outputs/predictions/`
+- `outputs/figures/`
 
-#### 6.3 可执行脚本（`scripts/`）
-| 文件 | 功能 |
-|---|---|
-| `scripts/inspect_dataset.py` | 扫描 `data/raw` 并输出数据检查报告 |
-| `scripts/build_metadata.py` | 自动构建标准化 `metadata.csv` |
-| `scripts/preprocess_eye_tracking.py` | 眼动标准化、清洗、fixation 化，输出 `processed_fixations.csv` |
-| `scripts/make_splits.py` | 生成防泄漏 train/val/test 划分、报告与 heatmap |
-| `scripts/train.py` | 训练 + 验证 + 测试 + 导出指标/预测/图表 |
-| `scripts/evaluate.py` | 加载 checkpoint 在指定 split 上评估 |
-| `scripts/predict.py` | 加载 checkpoint 导出预测 CSV |
-| `scripts/analyze_results.py` | 汇总预测结果并生成分析指标与图表 |
-| `scripts/smoke_test.py` | 全链路快速冒烟测试（含三类模型） |
+### 之后如何切换到真实数据
+当你上传真实数据后：
 
-#### 6.4 数据模块（`src/datasets/`）
-| 文件 | 功能 |
-|---|---|
-| `src/datasets/dataset_schema.py` | 数据 schema dataclass 定义 |
-| `src/datasets/dataset_adapter.py` | 原始数据自动适配器（含 synthetic fallback） |
-| `src/datasets/image_dataset.py` | 图像级数据集（静态/热图模型） |
-| `src/datasets/gaze_dataset.py` | 被试-图像级时序 gaze 数据集 |
-| `src/datasets/collate.py` | DataLoader 批处理拼接逻辑 |
-| `src/datasets/transforms.py` | 图像变换策略（保证 gaze 对齐） |
-| `src/datasets/split_utils.py` | 分层划分与泄漏检查核心逻辑 |
-
-#### 6.5 特征模块（`src/features/`）
-| 文件 | 功能 |
-|---|---|
-| `src/features/gaze_processing.py` | gaze/fixation 标准化、聚合与清洗 |
-| `src/features/heatmap.py` | fixation 到 heatmap 的生成逻辑 |
-| `src/features/fixation_tokenizer.py` | fixation patch 离散化与 patch 统计工具 |
-
-#### 6.6 模型入口（`src/models/`）
-| 文件 | 功能 |
-|---|---|
-| `src/models/backbones.py` | 视觉 backbone 包装（timm 优先，torchvision 回退） |
-| `src/models/baseline_static.py` | Baseline A 模型实现 |
-| `src/models/baseline_heatmap.py` | Baseline B 模型实现（分类 + 热图回归） |
-| `src/models/seq_gaze_detector.py` | 主模型实现（gaze 监督时序证据累积） |
-
-#### 6.7 模型子模块（`src/models/modules/`）
-| 文件 | 功能 |
-|---|---|
-| `src/models/modules/gaze_policy.py` | 因果 gaze policy 网络 |
-| `src/models/modules/glimpse_reader.py` | 中央视野证据读取器（双线性采样） |
-| `src/models/modules/accumulator.py` | 证据累积器（GRU / 可选 mamba 回退） |
-| `src/models/modules/heads.py` | 分类头等输出头定义 |
-| `src/models/modules/losses.py` | 主模型多项损失定义与加权 |
-
-#### 6.8 Lightning 训练封装（`src/lightning/`）
-| 文件 | 功能 |
-|---|---|
-| `src/lightning/lit_static.py` | Baseline A 的 LightningModule |
-| `src/lightning/lit_heatmap.py` | Baseline B 的 LightningModule |
-| `src/lightning/lit_seq.py` | 主模型的 LightningModule |
-
-#### 6.9 评估模块（`src/evaluation/`）
-| 文件 | 功能 |
-|---|---|
-| `src/evaluation/metrics_classification.py` | 分类指标（Acc/Precision/Recall/F1/AUROC/AUPRC 等） |
-| `src/evaluation/metrics_gaze.py` | 眼动误差指标（位置/时长） |
-| `src/evaluation/calibration.py` | 校准指标（ECE、Brier） |
-| `src/evaluation/bootstrapping.py` | bootstrap 置信区间工具 |
-
-#### 6.10 工具模块（`src/utils/`）
-| 文件 | 功能 |
-|---|---|
-| `src/utils/seed.py` | 全局随机种子与可复现设置 |
-| `src/utils/io.py` | JSON/CSV/路径工具 |
-| `src/utils/logging.py` | 日志初始化工具 |
-| `src/utils/plotting.py` | 混淆矩阵与 ROC 图绘制 |
-| `src/utils/registry.py` | 轻量注册器占位 |
-| `src/utils/pipeline.py` | 可复用的数据准备、DataLoader 与模块构建流程 |
-
-#### 6.11 测试文件（`tests/`）
-| 文件 | 功能 |
-|---|---|
-| `tests/test_dataset.py` | synthetic 数据流程完整性测试 |
-| `tests/test_splits.py` | 防泄漏划分正确性测试 |
-| `tests/test_forward.py` | 三类模型前向 shape 测试 |
-| `tests/test_smoke.py` | 轻量 smoke 级初始化与前向测试 |
-
-### 7. 详细使用教学
-
-#### 7.1 数据准备阶段
-1. 把真实数据放入 `data/raw/`
-2. 运行数据检查：
+1. 把原始图片和原始表格放到 `data/raw/` 下任意合适位置
+2. 重新运行：
    ```bash
    python scripts/inspect_dataset.py
-   ```
-3. 生成 metadata：
-   ```bash
    python scripts/build_metadata.py
-   ```
-4. 预处理眼动：
-   ```bash
-   python scripts/preprocess_eye_tracking.py
-   ```
-5. 生成防泄漏划分：
-   ```bash
+   python scripts/preprocess_eye_tracking.py --force-rebuild-eye-tracking
    python scripts/make_splits.py
    ```
+3. 检查：
+   - `data/processed/metadata.csv`
+   - `data/processed/eye_tracking.csv`
+   - `data/processed/processed_fixations.csv`
+   - `data/splits/split_report.json`
+4. 如果原始格式和当前假设不一致，优先修改 `src/datasets/dataset_adapter.py`，然后重跑同一套流程
 
-#### 7.2 流程验证阶段
-```bash
-python scripts/smoke_test.py
-```
+### 文件逐项说明
 
-#### 7.3 训练阶段
-- 静态基线：
-  ```bash
-  python scripts/train.py experiment=baseline_static
-  ```
-- 热图辅助基线：
-  ```bash
-  python scripts/train.py experiment=baseline_heatmap
-  ```
-- 主模型（固定 K）：
-  ```bash
-  python scripts/train.py experiment=seq_gaze_detector
-  ```
-- 主模型（learned stop）：
-  ```bash
-  python scripts/train.py experiment=seq_gaze_stop
-  ```
+#### 根目录文件
+| 文件 | 作用 |
+|---|---|
+| `README.md` | 中英文项目说明与使用手册 |
+| `requirements.txt` | 依赖列表 |
+| `pyproject.toml` | 项目元信息与 pytest 配置 |
+| `.gitignore` | 忽略输出、缓存和本地临时文件 |
 
-#### 7.4 评估与分析阶段
-- 评估：
-  ```bash
-  python scripts/evaluate.py --experiment seq_gaze_detector --ckpt outputs/checkpoints/exp_seq_gaze_fixedK/last.ckpt
-  ```
-- 导出预测：
-  ```bash
-  python scripts/predict.py --experiment seq_gaze_detector --ckpt outputs/checkpoints/exp_seq_gaze_fixedK/last.ckpt --split test
-  ```
-- 汇总分析：
-  ```bash
-  python scripts/analyze_results.py
-  ```
+#### `configs/`
+| 文件 | 作用 |
+|---|---|
+| `configs/config.yaml` | Hydra 根配置，默认入口指向 `diffscanauth` |
+| `configs/data/default.yaml` | 数据路径、预处理、split、loader、synthetic 参数 |
+| `configs/trainer/default.yaml` | Lightning 训练器默认参数 |
+| `configs/model/vit_b16.yaml` | 最终版 ViT-B/16 baseline 配置 |
+| `configs/model/aide_style.yaml` | 最终版 AIDE-style baseline 配置 |
+| `configs/model/vit_gaze_heatmap.yaml` | 最终版热图监督静态模型配置 |
+| `configs/model/seqdet_no_gaze.yaml` | 最终版无人类 gaze 顺序模型配置 |
+| `configs/model/diffscanauth.yaml` | 最终版 DiffScanAuth 配置 |
+| `configs/model/baseline_static.yaml` | 为兼容旧脚手架保留的老配置 |
+| `configs/model/baseline_heatmap.yaml` | 为兼容旧脚手架保留的老配置 |
+| `configs/model/seq_gaze_detector.yaml` | 为兼容旧脚手架保留的老配置 |
+| `configs/experiment/exp_vit_b16.yaml` | ViT-B/16 实验预设 |
+| `configs/experiment/exp_aide_style.yaml` | AIDE-style 实验预设 |
+| `configs/experiment/exp_vit_heatmap.yaml` | ViT + gaze heatmap 实验预设 |
+| `configs/experiment/exp_seqdet_no_gaze.yaml` | 无 gaze 顺序基线实验预设 |
+| `configs/experiment/exp_diffscanauth.yaml` | DiffScanAuth 主实验预设 |
+| `configs/experiment/ablation_no_gaze_supervision.yaml` | 去掉 gaze supervision 的 ablation |
+| `configs/experiment/ablation_heatmap_instead_of_scanpath.yaml` | 用 heatmap 替代 scanpath 的 ablation |
+| `configs/experiment/ablation_no_teacher_distillation.yaml` | 去掉 teacher distillation 的 ablation |
+| `configs/experiment/ablation_no_local_stream.yaml` | 去掉 local artifact stream 的 ablation |
+| `configs/experiment/ablation_fixed_k.yaml` | fixed-K 替代 learned stop 的 ablation |
+| `configs/experiment/control_shuffled_gaze.yaml` | shuffled gaze 对照实验 |
+| `configs/experiment/baseline_static.yaml` | 兼容旧版本的老实验预设 |
+| `configs/experiment/baseline_heatmap.yaml` | 兼容旧版本的老实验预设 |
+| `configs/experiment/seq_gaze_detector.yaml` | 兼容旧版本的 fixed-K 预设 |
+| `configs/experiment/seq_gaze_stop.yaml` | 兼容旧版本的 learned-stop 预设 |
 
-### 8. 运行注意事项
-- 若无法下载 timm 预训练权重，会自动回退到 torchvision。
-- 若 `mamba-ssm` 未安装，会自动回退到 GRU。
-- 在受限/离线环境下，项目仍可运行（含 synthetic fallback）。
+#### `scripts/`
+| 文件 | 作用 |
+|---|---|
+| `scripts/inspect_dataset.py` | 扫描 `data/raw/` 并输出结构检查报告 |
+| `scripts/build_metadata.py` | 从原始图像或 synthetic fallback 构建 `metadata.csv` |
+| `scripts/preprocess_eye_tracking.py` | 标准化眼动数据并生成 `processed_fixations.csv` |
+| `scripts/make_splits.py` | 生成防泄漏 train/val/test 划分并写出 heatmap |
+| `scripts/train.py` | Hydra 训练入口；训练结束后自动测试并导出结果 |
+| `scripts/evaluate.py` | 加载 checkpoint 在指定 split 上评估 |
+| `scripts/predict.py` | 导出指定 checkpoint 的预测 CSV |
+| `scripts/analyze_results.py` | 聚合 prediction CSV，计算指标并出图 |
+| `scripts/make_tables.py` | 从 metrics JSON 生成表格 |
+| `scripts/make_qualitative_figures.py` | 生成 Human vs Ours vs No-Gaze 的定性图 |
+| `scripts/make_confidence_curve.py` | 从顺序模型预测结果生成 confidence-over-time 曲线 |
+| `scripts/run_all_experiments.py` | 顺序执行主实验、ablation、control |
+| `scripts/smoke_test.py` | 对最终模型家族做快速可执行回归测试 |
+
+#### `src/`
+| 文件 | 作用 |
+|---|---|
+| `src/__init__.py` | Python 包标记 |
+
+#### `src/datasets/`
+| 文件 | 作用 |
+|---|---|
+| `src/datasets/dataset_schema.py` | 数据 schema 与简单类型定义 |
+| `src/datasets/dataset_adapter.py` | 原始数据扫描、metadata 构建、synthetic 数据生成、眼动适配 |
+| `src/datasets/image_dataset.py` | 静态图像模型的数据集 |
+| `src/datasets/gaze_dataset.py` | 顺序 gaze 数据集，支持 shuffled gaze control |
+| `src/datasets/collate.py` | static / sequential 两类 batch 的拼接逻辑 |
+| `src/datasets/transforms.py` | 不破坏 gaze 对齐关系的图像变换 |
+| `src/datasets/split_utils.py` | image-level 分层划分与泄漏检查 |
+
+#### `src/features/`
+| 文件 | 作用 |
+|---|---|
+| `src/features/gaze_processing.py` | 归一化、fixation 化、duration 标准化、delta 计算 |
+| `src/features/heatmap.py` | fixation heatmap 生成与存储 |
+| `src/features/fixation_tokenizer.py` | fixation 到 patch token 的离散化与统计 |
+
+#### `src/models/`
+| 文件 | 作用 |
+|---|---|
+| `src/models/backbones.py` | timm 优先、torchvision 回退的 backbone 包装器 |
+| `src/models/vit_b16_classifier.py` | 最终版 ViT-B/16 baseline |
+| `src/models/aide_style_detector.py` | 最终版 AIDE-style 静态鉴伪器 |
+| `src/models/vit_heatmap_model.py` | 最终版热图监督静态模型 |
+| `src/models/seqdet_no_gaze.py` | 最终版无人类 gaze 顺序模型 |
+| `src/models/diffscanauth.py` | 最终版 DiffScanAuth 主模型 |
+| `src/models/baseline_static.py` | 旧脚手架静态 baseline |
+| `src/models/baseline_heatmap.py` | 旧脚手架热图 baseline |
+| `src/models/seq_gaze_detector.py` | 旧脚手架顺序模型 |
+| `src/models/__init__.py` | 包标记 |
+
+#### `src/models/modules/`
+| 文件 | 作用 |
+|---|---|
+| `src/models/modules/dual_stream_encoder.py` | 全局语义流 + 局部伪影流封装 |
+| `src/models/modules/diffusion_teacher.py` | 轻量可训练 diffusion 风格 scanpath teacher |
+| `src/models/modules/gaze_student.py` | 因果 gaze policy student |
+| `src/models/modules/foveated_reader.py` | 最终版 foveated evidence reader |
+| `src/models/modules/accumulator.py` | GRU / Mamba 风格证据累积器 |
+| `src/models/modules/stop_head.py` | learned stop head |
+| `src/models/modules/losses.py` | 论文最终损失组合 |
+| `src/models/modules/gaze_policy.py` | 旧版本 policy 模块，保留兼容性 |
+| `src/models/modules/glimpse_reader.py` | 旧版本 glimpse reader，保留兼容性 |
+| `src/models/modules/heads.py` | 分类头和辅助头 |
+| `src/models/modules/__init__.py` | 包标记 |
+
+#### `src/lightning/`
+| 文件 | 作用 |
+|---|---|
+| `src/lightning/lit_vit.py` | ViT-B/16 的 Lightning 包装 |
+| `src/lightning/lit_aide.py` | AIDE-style 的 Lightning 包装 |
+| `src/lightning/lit_heatmap.py` | 热图监督静态模型的 Lightning 包装 |
+| `src/lightning/lit_seqdet.py` | 无 gaze 顺序模型的 Lightning 包装 |
+| `src/lightning/lit_diffscanauth.py` | DiffScanAuth 的 Lightning 包装 |
+| `src/lightning/lit_seq_base.py` | 顺序模型共享训练逻辑、checkpoint 注入、日志导出 |
+| `src/lightning/lit_static.py` | 旧脚手架静态 Lightning 包装 |
+| `src/lightning/lit_seq.py` | 旧脚手架顺序 Lightning 包装 |
+| `src/lightning/__init__.py` | 包标记 |
+
+#### `src/evaluation/`
+| 文件 | 作用 |
+|---|---|
+| `src/evaluation/metrics_classification.py` | 分类指标、校准指标、混淆矩阵打包 |
+| `src/evaluation/metrics_gaze.py` | 决策步数、scanpath、距离类指标 |
+| `src/evaluation/calibration.py` | ECE 和 Brier 的辅助函数 |
+| `src/evaluation/bootstrapping.py` | bootstrap 置信区间 |
+| `src/evaluation/__init__.py` | 包标记 |
+
+#### `src/utils/`
+| 文件 | 作用 |
+|---|---|
+| `src/utils/pipeline.py` | 数据准备、dataloader、module 构建等全流程辅助 |
+| `src/utils/plotting.py` | confusion/ROC/PR/confidence/scanpath 的绘图函数 |
+| `src/utils/seed.py` | 随机种子固定 |
+| `src/utils/io.py` | 路径、CSV、JSON、目录辅助 |
+| `src/utils/logging.py` | 统一 logger 辅助 |
+| `src/utils/registry.py` | 轻量 registry 占位 |
+| `src/utils/__init__.py` | 包标记 |
+
+#### `tests/`
+| 文件 | 作用 |
+|---|---|
+| `tests/test_dataset.py` | synthetic 数据流程测试 |
+| `tests/test_splits.py` | split 泄漏检查测试 |
+| `tests/test_forward.py` | static / sequential / teacher checkpoint 路径测试 |
+| `tests/test_smoke.py` | 可执行 smoke 回归测试 |
+
+### 已知限制
+1. SigLIP2-NaFlex 和 DINOv2 的“精确官方权重”在离线环境下不一定可直接下载，因此会回退到轻量 timm/torchvision backbone。
+2. 当前 diffusion teacher 是为可运行性和工程稳定性设计的轻量实现，不是超大规模 diffusion transformer。
+3. Mamba 路径是可选增强项，默认稳定后端仍是 GRU。
+4. dummy 数据上的结果只是验证 pipeline，可运行不代表论文最终指标。

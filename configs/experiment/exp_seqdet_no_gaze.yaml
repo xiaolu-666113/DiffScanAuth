@@ -1,0 +1,7 @@
+# @package _global_
+defaults:
+  - override /model: seqdet_no_gaze
+
+experiment:
+  name: exp_seqdet_no_gaze
+  description: "Sequential detector without human gaze supervision"

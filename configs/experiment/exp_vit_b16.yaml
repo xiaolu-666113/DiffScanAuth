@@ -1,0 +1,7 @@
+# @package _global_
+defaults:
+  - override /model: vit_b16
+
+experiment:
+  name: exp_vit_b16
+  description: "Static ViT-B/16 baseline"

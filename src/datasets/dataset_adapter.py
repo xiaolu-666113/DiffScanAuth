@@ -32,6 +32,19 @@ GENERATOR_KEYWORDS = [
 ]
 SOURCE_REAL_KEYWORDS = ["real", "authentic", "natural"]
 SOURCE_FAKE_KEYWORDS = ["fake", "aigc", "synthetic", "generated", "ai"]
+SOURCE_REAL_TOKENS = {"real", "authentic", "natural"}
+SOURCE_FAKE_TOKENS = {"fake", "aigc", "generated", "ai", "synthetic"}
+SCENE_DENY_TOKENS = {
+    "data",
+    "raw",
+    "processed",
+    "splits",
+    "images",
+    "image",
+    "camera",
+    "photos",
+    "metadata",
+}
 
 
 @dataclass
@@ -55,16 +68,47 @@ def _contains_any(text: str, keywords: list[str]) -> bool:
     return any(k in t for k in keywords)
 
 
-def _infer_source_type(path: Path) -> str:
+def _relative_parts(path: Path, root: Path | None = None) -> list[str]:
+    candidate = path
+    if root is not None:
+        try:
+            candidate = path.resolve().relative_to(root.resolve())
+        except ValueError:
+            candidate = path
+    return [part.lower() for part in candidate.parts]
+
+
+def _find_source_index(parts: list[str]) -> tuple[int, str] | None:
+    for idx in range(len(parts) - 2, -1, -1):
+        token = parts[idx]
+        if token in SOURCE_REAL_TOKENS:
+            return idx, "real"
+        if token in SOURCE_FAKE_TOKENS:
+            return idx, "aigc"
+    return None
+
+
+def _infer_source_type(path: Path, root: Path | None = None) -> str:
+    parts = _relative_parts(path, root)
+    source_hit = _find_source_index(parts)
+    if source_hit is not None:
+        return source_hit[1]
+
     s = path.as_posix().lower()
-    if _contains_any(s, SOURCE_FAKE_KEYWORDS):
+    if _contains_any(s, [k for k in SOURCE_FAKE_KEYWORDS if k != "synthetic"]):
         return "aigc"
     if _contains_any(s, SOURCE_REAL_KEYWORDS):
         return "real"
     return "unknown"
 
 
-def _infer_generator(path: Path) -> str:
+def _infer_generator(path: Path, root: Path | None = None) -> str:
+    parts = _relative_parts(path, root)
+    source_hit = _find_source_index(parts)
+    if source_hit is not None and source_hit[0] + 2 < len(parts) - 1:
+        generator = parts[source_hit[0] + 2]
+        return "" if generator == "camera" else generator
+
     s = path.as_posix().lower()
     for k in GENERATOR_KEYWORDS:
         if k in s:
@@ -74,20 +118,17 @@ def _infer_generator(path: Path) -> str:
     return ""
 
 
-def _infer_scene(path: Path) -> str:
-    parts = [p.lower() for p in path.parts]
-    deny = {
-        "data",
-        "raw",
-        "processed",
-        "splits",
-        "synthetic",
-        "real",
-        "fake",
-        "aigc",
-        "generated",
-        "images",
-    }
+def _infer_scene(path: Path, root: Path | None = None) -> str:
+    parts = _relative_parts(path, root)
+    source_hit = _find_source_index(parts)
+    if source_hit is not None and source_hit[0] + 1 < len(parts) - 1:
+        scene = parts[source_hit[0] + 1]
+        if scene not in SCENE_DENY_TOKENS:
+            return scene
+
+    deny = set(SCENE_DENY_TOKENS)
+    deny.update(SOURCE_REAL_TOKENS)
+    deny.update(SOURCE_FAKE_TOKENS)
     deny.update(GENERATOR_KEYWORDS)
     for token in reversed(parts[:-1]):
         if token not in deny and len(token) > 1:
@@ -95,9 +136,14 @@ def _infer_scene(path: Path) -> str:
     return "unknown"
 
 
-def _infer_label(path: Path, source_type: str) -> int:
+def _infer_label(path: Path, source_type: str, root: Path | None = None) -> int:
+    inferred = _infer_source_type(path, root=root)
+    if inferred == "aigc":
+        return 1
+    if inferred == "real":
+        return 0
     s = path.as_posix().lower()
-    if _contains_any(s, SOURCE_FAKE_KEYWORDS):
+    if _contains_any(s, [k for k in SOURCE_FAKE_KEYWORDS if k != "synthetic"]):
         return 1
     if _contains_any(s, SOURCE_REAL_KEYWORDS):
         return 0
@@ -255,10 +301,10 @@ def build_metadata(
             rel = p.resolve().relative_to(repo_root.resolve())
         except ValueError:
             rel = p.resolve()
-        source_type = _infer_source_type(p)
-        scene = _infer_scene(p)
-        generator = _infer_generator(p)
-        label = _infer_label(p, source_type)
+        source_type = _infer_source_type(p, root=root)
+        scene = _infer_scene(p, root=root)
+        generator = _infer_generator(p, root=root)
+        label = _infer_label(p, source_type, root=root)
 
         hint = hint_map.get(p.stem)
         if hint is not None:
@@ -388,6 +434,7 @@ def build_eye_tracking(
     metadata_csv: str | Path,
     output_csv: str | Path,
     allow_synthetic: bool = True,
+    synthetic_num_subjects: int = 10,
     seed: int = 42,
 ) -> pd.DataFrame:
     """Build standardized eye_tracking.csv from raw files or synthetic fallback."""
@@ -427,7 +474,7 @@ def build_eye_tracking(
     else:
         if not allow_synthetic:
             raise RuntimeError("No eye-tracking files found and synthetic fallback disabled")
-        df = _generate_synthetic_eye_tracking(metadata_df, seed=seed)
+        df = _generate_synthetic_eye_tracking(metadata_df, n_subjects=synthetic_num_subjects, seed=seed)
 
     out = df[
         [

@@ -42,4 +42,8 @@ def test_dataset_pipeline_with_synthetic(tmp_path: Path) -> None:
     md = pd.read_csv(data_cfg["metadata_csv"])
     assert "split" in md.columns
     assert set(md["split"].unique()).issubset({"train", "val", "test"})
+    assert set(md["source_type"].unique()).issubset({"real", "aigc"})
+    assert set(md["scene"].unique()) == {"cat", "dog", "landscape", "building"}
+    assert md.loc[md["source_type"] == "real", "label"].eq(0).all()
+    assert md.loc[md["source_type"] == "aigc", "label"].eq(1).all()
     assert r["image_leakage_check"]["train_val_overlap"] == 0

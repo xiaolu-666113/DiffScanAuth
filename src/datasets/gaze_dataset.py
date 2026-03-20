@@ -31,6 +31,8 @@ class GazeSequenceDataset(Dataset):
         train: bool = False,
         use_aug: bool = False,
         heatmap_size: int = 96,
+        shuffled_gaze: bool = False,
+        shuffle_seed: int = 42,
     ) -> None:
         del duration_norm_mode  # already normalized during preprocessing
         self.root = project_root()
@@ -50,6 +52,7 @@ class GazeSequenceDataset(Dataset):
         self.patch_grid_size = patch_grid_size
         self.num_patches = patch_grid_size * patch_grid_size
         self.heatmap_size = heatmap_size
+        self.shuffled_gaze = shuffled_gaze
 
         grouped = self.fix.groupby(["subject_id", "image_id"], sort=False)
         self.keys: list[tuple[str, str]] = []
@@ -63,6 +66,27 @@ class GazeSequenceDataset(Dataset):
         if len(self.keys) == 0:
             raise ValueError(f"No gaze sequence samples for split='{split}'")
 
+        self.sequence_map = {
+            (str(sid), str(iid)): g.sort_values("fixation_idx").copy()
+            for (sid, iid), g in grouped
+            if iid in self.meta_by_id.index and len(g) > 0
+        }
+        self.shuffled_sequence_map: dict[tuple[str, str], tuple[str, str]] = {}
+        if shuffled_gaze:
+            rng = np.random.default_rng(shuffle_seed)
+            pools: dict[int, list[tuple[str, str]]] = {}
+            for sid, iid in self.keys:
+                label = int(self.meta_by_id.loc[iid]["label"])
+                pools.setdefault(label, []).append((sid, iid))
+
+            for key in self.keys:
+                label = int(self.meta_by_id.loc[key[1]]["label"])
+                candidates = [x for x in pools.get(label, []) if x[1] != key[1]]
+                if not candidates:
+                    candidates = pools.get(label, [key])
+                donor = candidates[int(rng.integers(0, len(candidates)))]
+                self.shuffled_sequence_map[key] = donor
+
     def __len__(self) -> int:
         return len(self.keys)
 
@@ -75,7 +99,8 @@ class GazeSequenceDataset(Dataset):
     def __getitem__(self, index: int) -> dict[str, torch.Tensor | str]:
         sid, iid = self.keys[index]
         m = self.meta_by_id.loc[iid]
-        g = self.fix[(self.fix["subject_id"] == sid) & (self.fix["image_id"] == iid)].sort_values("fixation_idx")
+        donor_sid, donor_iid = self.shuffled_sequence_map.get((sid, iid), (sid, iid))
+        g = self.sequence_map[(donor_sid, donor_iid)]
 
         image_path = self._resolve_path(str(m["image_path"]))
         with Image.open(image_path) as im:
@@ -86,18 +111,23 @@ class GazeSequenceDataset(Dataset):
         mask = np.zeros(self.max_fixations, dtype=np.float32)
         patch_idx = np.zeros(self.max_fixations, dtype=np.int64)
         fix_xy = np.zeros((self.max_fixations, 2), dtype=np.float32)
+        fix_delta = np.zeros((self.max_fixations, 2), dtype=np.float32)
         fix_dur = np.zeros(self.max_fixations, dtype=np.float32)
 
         gx = g["x_norm"].to_numpy(dtype=np.float32)[:n]
         gy = g["y_norm"].to_numpy(dtype=np.float32)[:n]
         gp = g["patch_index"].to_numpy(dtype=np.int64)[:n]
         gd = g["duration_norm"].to_numpy(dtype=np.float32)[:n]
+        gdx = g["delta_x"].to_numpy(dtype=np.float32)[:n] if "delta_x" in g.columns else np.zeros(n, dtype=np.float32)
+        gdy = g["delta_y"].to_numpy(dtype=np.float32)[:n] if "delta_y" in g.columns else np.zeros(n, dtype=np.float32)
 
         if n > 0:
             mask[:n] = 1.0
             patch_idx[:n] = gp
             fix_xy[:n, 0] = gx
             fix_xy[:n, 1] = gy
+            fix_delta[:n, 0] = gdx
+            fix_delta[:n, 1] = gdy
             fix_dur[:n] = gd
 
         patch_dist = patch_histogram(patch_idx[:n], self.num_patches)
@@ -107,11 +137,17 @@ class GazeSequenceDataset(Dataset):
             "image": image,
             "label": torch.tensor(float(m["label"]), dtype=torch.float32),
             "image_id": iid,
+            "image_path": str(image_path),
             "subject_id": sid,
             "patch_idx": torch.from_numpy(patch_idx),
             "fix_xy": torch.from_numpy(fix_xy),
+            "fix_delta": torch.from_numpy(fix_delta),
             "fix_dur": torch.from_numpy(fix_dur),
             "mask": torch.from_numpy(mask),
             "patch_dist": torch.from_numpy(patch_dist.astype(np.float32)),
             "heatmap": torch.from_numpy(heatmap).unsqueeze(0),
+            "source_type": str(m.get("source_type", "")),
+            "scene": str(m.get("scene", "")),
+            "generator": str(m.get("generator", "")),
+            "shuffled_from_image_id": donor_iid if self.shuffled_gaze else "",
         }

@@ -1,0 +1,11 @@
+# @package _global_
+defaults:
+  - override /model: diffscanauth
+
+model:
+  shuffled_gaze: true
+  shuffle_seed: 42
+
+experiment:
+  name: control_shuffled_gaze
+  description: "Control experiment with shuffled human gaze trajectories"

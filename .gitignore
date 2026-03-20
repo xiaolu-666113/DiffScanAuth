@@ -13,14 +13,46 @@ train.log
 venv/
 .env
 
-outputs/
-!outputs/.gitkeep
+# Data directories: keep structure, ignore contents
+data/raw/*
+!data/raw/.gitkeep
 
-data/processed/
+data/processed/*
 !data/processed/.gitkeep
 
-data/splits/
+data/splits/*
 !data/splits/.gitkeep
+
+# Output directories: keep folders, ignore generated artifacts
+outputs/*
+!outputs/.gitkeep
+!outputs/logs/
+!outputs/checkpoints/
+!outputs/figures/
+!outputs/metrics/
+!outputs/predictions/
+
+outputs/logs/*
+!outputs/logs/.gitkeep
+
+outputs/checkpoints/*
+!outputs/checkpoints/.gitkeep
+
+outputs/figures/*
+!outputs/figures/.gitkeep
+
+outputs/metrics/*
+!outputs/metrics/.gitkeep
+
+outputs/predictions/*
+!outputs/predictions/.gitkeep
+
+# Model weights / large artifacts
+*.ckpt
+*.pt
+*.pth
+*.safetensors
+*.onnx
 
 logs/
 wandb/

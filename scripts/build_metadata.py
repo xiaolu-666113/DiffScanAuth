@@ -3,8 +3,17 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
+
+MPL_DIR = Path("outputs/.mplconfig")
+MPL_DIR.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("MPLCONFIGDIR", str(MPL_DIR.resolve()))
+os.environ.setdefault("MPLBACKEND", "Agg")
+CACHE_DIR = Path("outputs/.cache")
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("XDG_CACHE_HOME", str(CACHE_DIR.resolve()))
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:

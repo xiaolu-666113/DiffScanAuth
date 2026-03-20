@@ -1,0 +1,12 @@
+# @package _global_
+defaults:
+  - override /model: diffscanauth
+
+model:
+  use_teacher: false
+  use_teacher_distill: false
+  loss_distill: 0.0
+
+experiment:
+  name: ablation_no_teacher_distillation
+  description: "DiffScanAuth ablation without teacher distillation"

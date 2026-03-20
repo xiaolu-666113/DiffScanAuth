@@ -1,0 +1,7 @@
+# @package _global_
+defaults:
+  - override /model: vit_gaze_heatmap
+
+experiment:
+  name: exp_vit_heatmap
+  description: "ViT-B/16 + human gaze heatmap supervision baseline"

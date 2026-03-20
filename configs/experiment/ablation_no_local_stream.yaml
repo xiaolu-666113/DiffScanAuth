@@ -1,0 +1,10 @@
+# @package _global_
+defaults:
+  - override /model: diffscanauth
+
+model:
+  use_local_stream: false
+
+experiment:
+  name: ablation_no_local_stream
+  description: "DiffScanAuth ablation without local artifact stream"

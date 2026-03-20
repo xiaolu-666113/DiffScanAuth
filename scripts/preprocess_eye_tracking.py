@@ -3,8 +3,17 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
+
+MPL_DIR = Path("outputs/.mplconfig")
+MPL_DIR.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("MPLCONFIGDIR", str(MPL_DIR.resolve()))
+os.environ.setdefault("MPLBACKEND", "Agg")
+CACHE_DIR = Path("outputs/.cache")
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("XDG_CACHE_HOME", str(CACHE_DIR.resolve()))
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -24,6 +33,7 @@ def main() -> None:
     parser.add_argument("--max-duration-ms", type=float, default=2000.0)
     parser.add_argument("--patch-grid-size", type=int, default=24)
     parser.add_argument("--allow-synthetic", action="store_true", default=True)
+    parser.add_argument("--force-rebuild-eye-tracking", action="store_true")
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
@@ -37,6 +47,7 @@ def main() -> None:
         "max_duration_ms": args.max_duration_ms,
         "patch_grid_size": args.patch_grid_size,
         "allow_synthetic": args.allow_synthetic,
+        "force_rebuild_eye_tracking": args.force_rebuild_eye_tracking,
         "synthetic_seed": args.seed,
     }
     df = run_preprocess_eye_tracking(data_cfg)

@@ -1,0 +1,16 @@
+# @package _global_
+defaults:
+  - override /model: diffscanauth
+
+model:
+  use_gaze_supervision: false
+  teacher_forcing_ratio: 0.0
+  teacher_forcing_final: 0.0
+  scheduled_sampling_ratio: 1.0
+  scheduled_sampling_final: 1.0
+  loss_gaze: 0.0
+  loss_align: 0.0
+
+experiment:
+  name: ablation_no_gaze_supervision
+  description: "DiffScanAuth ablation without direct human gaze supervision"

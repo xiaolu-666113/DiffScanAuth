@@ -18,9 +18,13 @@ from src.datasets.split_utils import make_splits
 from src.features.fixation_tokenizer import add_patch_tokens
 from src.features.gaze_processing import clean_and_normalize_fixations, normalize_columns, normalize_duration, to_fixation_level
 from src.features.heatmap import build_image_heatmaps, save_heatmaps
+from src.lightning.lit_aide import LitAIDE
+from src.lightning.lit_diffscanauth import LitDiffScanAuth
 from src.lightning.lit_heatmap import LitHeatmap
 from src.lightning.lit_seq import LitSeq
+from src.lightning.lit_seqdet import LitSeqDet
 from src.lightning.lit_static import LitStatic
+from src.lightning.lit_vit import LitViT
 from src.utils.io import ensure_dir, save_csv, save_json
 from src.utils.logging import get_logger
 
@@ -46,12 +50,13 @@ def run_preprocess_eye_tracking(data_cfg: dict[str, Any]) -> pd.DataFrame:
     metadata_df = pd.read_csv(data_cfg["metadata_csv"])
 
     eye_csv = Path(data_cfg["eye_tracking_csv"])
-    if not eye_csv.exists():
+    if bool(data_cfg.get("force_rebuild_eye_tracking", False)) or not eye_csv.exists():
         build_eye_tracking(
             raw_dir=data_cfg["raw_dir"],
             metadata_csv=data_cfg["metadata_csv"],
             output_csv=data_cfg["eye_tracking_csv"],
             allow_synthetic=bool(data_cfg.get("allow_synthetic", True)),
+            synthetic_num_subjects=int(data_cfg.get("synthetic_num_subjects", 10)),
             seed=int(data_cfg.get("synthetic_seed", 42)),
         )
 
@@ -87,6 +92,8 @@ def run_preprocess_eye_tracking(data_cfg: dict[str, Any]) -> pd.DataFrame:
         "y_norm",
         "duration_norm",
         "duration_ms",
+        "delta_x",
+        "delta_y",
         "patch_index",
         "split",
     ]
@@ -153,8 +160,12 @@ def ensure_prepared_data(data_cfg: dict[str, Any]) -> None:
         LOGGER.info("metadata.csv missing, running build_metadata")
         run_build_metadata(data_cfg)
 
-    if not fix_csv.exists():
-        LOGGER.info("processed_fixations.csv missing, running preprocess_eye_tracking")
+    need_fix = not fix_csv.exists()
+    if not need_fix:
+        fix_df = pd.read_csv(fix_csv, nrows=5)
+        need_fix = any(col not in fix_df.columns for col in ["delta_x", "delta_y"])
+    if need_fix:
+        LOGGER.info("processed_fixations.csv missing or outdated, running preprocess_eye_tracking")
         run_preprocess_eye_tracking(data_cfg)
 
     need_split = not split_report.exists()
@@ -166,15 +177,25 @@ def ensure_prepared_data(data_cfg: dict[str, Any]) -> None:
         run_make_splits(data_cfg)
 
 
-def build_dataloaders(data_cfg: dict[str, Any], model_name: str, train_aug: bool = True) -> dict[str, DataLoader]:
+def build_dataloaders(
+    data_cfg: dict[str, Any],
+    model_name: str | None = None,
+    train_aug: bool = True,
+    model_cfg: dict[str, Any] | None = None,
+) -> dict[str, DataLoader]:
     """Construct train/val/test dataloaders for selected model type."""
+    if model_cfg is not None and model_name is None:
+        model_name = str(model_cfg.get("name"))
+    if model_name is None:
+        raise ValueError("Either model_name or model_cfg must be provided to build_dataloaders")
+
     loader_cfg = data_cfg.get("loader", {})
     batch_size = int(loader_cfg.get("batch_size", 8))
     num_workers = int(loader_cfg.get("num_workers", 4))
     pin_memory = bool(loader_cfg.get("pin_memory", True))
 
-    if model_name in {"baseline_static", "baseline_heatmap"}:
-        use_heatmap = model_name == "baseline_heatmap"
+    if model_name in {"baseline_static", "baseline_heatmap", "vit_b16", "aide_style", "vit_gaze_heatmap"}:
+        use_heatmap = model_name in {"baseline_heatmap", "vit_gaze_heatmap"}
         train_ds = StaticImageDataset(
             metadata_csv=data_cfg["metadata_csv"],
             split="train",
@@ -204,6 +225,8 @@ def build_dataloaders(data_cfg: dict[str, Any], model_name: str, train_aug: bool
         )
         collate_fn = collate_static
     else:
+        shuffled_gaze = bool((model_cfg or {}).get("shuffled_gaze", False))
+        shuffle_seed = int((model_cfg or {}).get("shuffle_seed", data_cfg.get("synthetic_seed", 42)))
         train_ds = GazeSequenceDataset(
             metadata_csv=data_cfg["metadata_csv"],
             fixations_csv=data_cfg["processed_fixations_csv"],
@@ -215,6 +238,8 @@ def build_dataloaders(data_cfg: dict[str, Any], model_name: str, train_aug: bool
             train=True,
             use_aug=train_aug,
             heatmap_size=int(data_cfg.get("heatmap_size", 96)),
+            shuffled_gaze=shuffled_gaze,
+            shuffle_seed=shuffle_seed,
         )
         val_ds = GazeSequenceDataset(
             metadata_csv=data_cfg["metadata_csv"],
@@ -227,6 +252,8 @@ def build_dataloaders(data_cfg: dict[str, Any], model_name: str, train_aug: bool
             train=False,
             use_aug=False,
             heatmap_size=int(data_cfg.get("heatmap_size", 96)),
+            shuffled_gaze=shuffled_gaze,
+            shuffle_seed=shuffle_seed,
         )
         test_ds = GazeSequenceDataset(
             metadata_csv=data_cfg["metadata_csv"],
@@ -239,6 +266,8 @@ def build_dataloaders(data_cfg: dict[str, Any], model_name: str, train_aug: bool
             train=False,
             use_aug=False,
             heatmap_size=int(data_cfg.get("heatmap_size", 96)),
+            shuffled_gaze=shuffled_gaze,
+            shuffle_seed=shuffle_seed,
         )
         collate_fn = collate_gaze
 
@@ -274,6 +303,17 @@ def build_lightning_module(model_cfg: dict[str, Any]):
     """Instantiate corresponding lightning module from model config."""
     name = str(model_cfg.get("name"))
     optim_cfg = dict(model_cfg.get("optimizer", {}))
+
+    if name == "vit_b16":
+        return LitViT(model_cfg=dict(model_cfg), optim_cfg=optim_cfg)
+    if name == "aide_style":
+        return LitAIDE(model_cfg=dict(model_cfg), optim_cfg=optim_cfg)
+    if name == "vit_gaze_heatmap":
+        return LitHeatmap(model_cfg=dict(model_cfg), optim_cfg=optim_cfg)
+    if name == "seqdet_no_gaze":
+        return LitSeqDet(model_cfg=dict(model_cfg), optim_cfg=optim_cfg)
+    if name == "diffscanauth":
+        return LitDiffScanAuth(model_cfg=dict(model_cfg), optim_cfg=optim_cfg)
 
     if name == "baseline_static":
         return LitStatic(model_cfg=dict(model_cfg), optim_cfg=optim_cfg)

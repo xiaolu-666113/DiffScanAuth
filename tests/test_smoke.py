@@ -25,6 +25,7 @@ def test_smoke_data_and_model_init(tmp_path: Path) -> None:
         "allow_synthetic": True,
         "synthetic_num_images": 24,
         "synthetic_seed": 11,
+        "synthetic_num_subjects": 4,
         "patch_grid_size": 8,
         "duration_norm_mode": "log_zscore",
         "min_duration_ms": 40.0,
@@ -41,29 +42,40 @@ def test_smoke_data_and_model_init(tmp_path: Path) -> None:
     run_make_splits(data_cfg)
 
     model_cfg = {
-        "name": "seq_gaze_detector",
-        "backbone_name": "resnet18",
+        "name": "diffscanauth",
+        "global_stream_name": "resnet18",
+        "local_stream_name": "resnet18",
         "pretrained": False,
+        "use_local_stream": True,
+        "use_teacher": True,
+        "use_gaze_supervision": True,
+        "use_teacher_distill": True,
+        "policy_type": "gru",
+        "teacher_hidden_dim": 64,
         "patch_grid_size": 8,
         "policy_hidden_dim": 64,
         "glimpse_dim": 64,
         "accumulator_hidden_dim": 64,
         "accumulator_backend": "gru",
-        "stop_mode": "fixed_k",
+        "max_steps": 8,
+        "fixed_steps": 8,
+        "stop_mode": "learned_stop",
         "dropout": 0.1,
         "teacher_forcing_ratio": 1.0,
         "teacher_forcing_final": 1.0,
+        "scheduled_sampling_ratio": 0.0,
+        "scheduled_sampling_final": 0.0,
         "align_loss": "mse",
         "loss_cls": 1.0,
-        "loss_patch": 0.5,
-        "loss_coord": 0.5,
-        "loss_dur": 0.2,
+        "loss_gaze": 1.0,
+        "loss_distill": 0.5,
         "loss_stop": 0.2,
         "loss_align": 0.1,
+        "loss_rl": 0.0,
         "optimizer": {"lr": 1e-3, "weight_decay": 0.0, "pos_weight": None},
     }
 
-    loaders = build_dataloaders(data_cfg, model_name="seq_gaze_detector", train_aug=False)
+    loaders = build_dataloaders(data_cfg, model_name="diffscanauth", model_cfg=model_cfg, train_aug=False)
     lit = build_lightning_module(model_cfg)
     batch = next(iter(loaders["train"]))
     out = lit.model(batch)

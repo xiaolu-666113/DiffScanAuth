@@ -45,7 +45,7 @@ def run_model_smoke(data_cfg: dict, model_cfg_path: str) -> None:
     model_cfg = load_yaml(model_cfg_path)
     model_name = model_cfg["name"]
 
-    loaders = build_dataloaders(data_cfg, model_name=model_name, train_aug=False)
+    loaders = build_dataloaders(data_cfg, model_name=model_name, model_cfg=model_cfg, train_aug=False)
     lit = build_lightning_module(model_cfg)
 
     trainer = pl.Trainer(
@@ -70,11 +70,13 @@ def main() -> None:
 
     run_data_pipeline(data_cfg)
 
-    run_model_smoke(data_cfg, "configs/model/baseline_static.yaml")
-    run_model_smoke(data_cfg, "configs/model/baseline_heatmap.yaml")
-    run_model_smoke(data_cfg, "configs/model/seq_gaze_detector.yaml")
+    run_model_smoke(data_cfg, "configs/model/vit_b16.yaml")
+    run_model_smoke(data_cfg, "configs/model/aide_style.yaml")
+    run_model_smoke(data_cfg, "configs/model/vit_gaze_heatmap.yaml")
+    run_model_smoke(data_cfg, "configs/model/seqdet_no_gaze.yaml")
+    run_model_smoke(data_cfg, "configs/model/diffscanauth.yaml")
 
-    print("Smoke test passed for data pipeline + 3 model families.")
+    print("Smoke test passed for final paper model families.")
 
 
 if __name__ == "__main__":

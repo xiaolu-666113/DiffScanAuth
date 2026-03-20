@@ -1,0 +1,11 @@
+# @package _global_
+defaults:
+  - override /model: diffscanauth
+
+model:
+  stop_mode: fixed_k
+  fixed_steps: 12
+
+experiment:
+  name: ablation_fixed_k
+  description: "DiffScanAuth ablation with fixed-K stopping"

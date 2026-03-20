@@ -1,4 +1,4 @@
-"""Lightning module for heatmap auxiliary baseline."""
+"""Lightning module for ViT + heatmap auxiliary baseline."""
 
 from __future__ import annotations
 
@@ -9,17 +9,17 @@ import torch
 import torch.nn.functional as F
 from torchmetrics.classification import BinaryAUROC, BinaryAccuracy, BinaryAveragePrecision, BinaryF1Score
 
-from src.models.baseline_heatmap import BaselineHeatmapAux
+from src.models.vit_heatmap_model import ViTHeatmapModel
 
 
 class LitHeatmap(pl.LightningModule):
-    """Train/eval wrapper for Baseline B."""
+    """Train/eval wrapper for ViT + human gaze heatmap baseline."""
 
     def __init__(self, model_cfg: dict[str, Any], optim_cfg: dict[str, Any]) -> None:
         super().__init__()
         self.save_hyperparameters({"model_cfg": model_cfg, "optim_cfg": optim_cfg})
-        self.model = BaselineHeatmapAux(
-            backbone_name=model_cfg.get("backbone_name", "convnext_tiny"),
+        self.model = ViTHeatmapModel(
+            backbone_name=model_cfg.get("backbone_name", "vit_base_patch16_224"),
             pretrained=bool(model_cfg.get("pretrained", True)),
             heatmap_size=int(model_cfg.get("heatmap_size", 96)),
             dropout=float(model_cfg.get("dropout", 0.2)),
@@ -96,8 +96,9 @@ class LitHeatmap(pl.LightningModule):
         self.log("test/auprc", self.test_auprc, on_epoch=True)
 
         image_ids = batch["image_id"]
-        for iid, y, p in zip(image_ids, label.detach().cpu().tolist(), prob.detach().cpu().tolist()):
-            self.test_outputs.append({"image_id": iid, "label": int(y), "prob": float(p)})
+        image_paths = batch["image_path"]
+        for iid, ipath, y, p in zip(image_ids, image_paths, label.detach().cpu().tolist(), prob.detach().cpu().tolist()):
+            self.test_outputs.append({"image_id": iid, "image_path": ipath, "label": int(y), "prob": float(p)})
 
     def configure_optimizers(self):
         return torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)

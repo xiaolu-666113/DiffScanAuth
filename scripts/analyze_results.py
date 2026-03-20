@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from pathlib import Path
 import sys
@@ -22,8 +23,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.evaluation.metrics_classification import classification_metrics
+from src.evaluation.metrics_gaze import average_decision_steps
 from src.utils.io import ensure_dir, save_json
-from src.utils.plotting import plot_confusion_matrix, plot_roc_curve
+from src.utils.plotting import plot_confusion_matrix, plot_confidence_over_time, plot_pr_curve, plot_roc_curve
 
 
 def main() -> None:
@@ -52,9 +54,23 @@ def main() -> None:
         metrics = classification_metrics(y_true=y_true, y_prob=y_prob)
 
         stem = pf.stem
+        if "decision_steps" in df.columns:
+            metrics["avg_decision_steps"] = average_decision_steps(df["decision_steps"].to_numpy())
+        if "stop_step_error" in df.columns:
+            metrics["stop_step_error"] = float(df["stop_step_error"].mean())
+        if "coord_mae" in df.columns:
+            metrics["fixation_position_mae"] = float(df["coord_mae"].mean())
+        if "dur_mae" in df.columns:
+            metrics["duration_mae"] = float(df["dur_mae"].mean())
+
         save_json(metrics, metric_dir / f"{stem}_analysis.json")
         plot_confusion_matrix(y_true, (y_prob >= 0.5).astype(int), fig_dir / f"{stem}_confusion_matrix.png")
         plot_roc_curve(y_true, y_prob, fig_dir / f"{stem}_roc_curve.png")
+        plot_pr_curve(y_true, y_prob, fig_dir / f"{stem}_pr_curve.png")
+
+        if "step_probs_json" in df.columns:
+            sequences = [json.loads(x) for x in df["step_probs_json"].dropna().tolist()]
+            plot_confidence_over_time(sequences, fig_dir / f"{stem}_confidence_curve.png", title=f"{stem} Confidence Over Time")
 
         summary_rows.append({"file": pf.name, **{k: v for k, v in metrics.items() if isinstance(v, float)}})
 

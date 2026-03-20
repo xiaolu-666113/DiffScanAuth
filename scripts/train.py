@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import sys
@@ -29,7 +30,7 @@ if str(ROOT) not in sys.path:
 from src.evaluation.metrics_classification import classification_metrics
 from src.utils.io import ensure_dir, save_json
 from src.utils.pipeline import build_dataloaders, build_lightning_module, ensure_prepared_data
-from src.utils.plotting import plot_confusion_matrix, plot_roc_curve
+from src.utils.plotting import plot_confusion_matrix, plot_confidence_over_time, plot_pr_curve, plot_roc_curve
 from src.utils.seed import set_global_seed
 
 
@@ -61,7 +62,7 @@ def main(cfg: DictConfig) -> None:
     exp_name = str(cfg.experiment.name)
 
     ensure_prepared_data(data_cfg)
-    loaders = build_dataloaders(data_cfg, model_name=str(model_cfg["name"]), train_aug=True)
+    loaders = build_dataloaders(data_cfg, model_cfg=model_cfg, train_aug=True)
     lit = build_lightning_module(model_cfg)
 
     ckpt_dir = ensure_dir(Path("outputs/checkpoints") / exp_name)
@@ -74,7 +75,7 @@ def main(cfg: DictConfig) -> None:
 
     checkpoint_cb = ModelCheckpoint(
         dirpath=str(ckpt_dir),
-        filename="{epoch:02d}-{val_auroc:.4f}",
+        filename="{epoch:02d}-{step:06d}",
         monitor=monitor,
         mode=monitor_mode,
         save_top_k=int(trainer_cfg.get("save_top_k", 1)),
@@ -125,12 +126,18 @@ def main(cfg: DictConfig) -> None:
         y_pred = (y_prob >= 0.5).astype(int)
         plot_confusion_matrix(y_true, y_pred, fig_dir / f"{exp_name}_confusion_matrix.png")
         plot_roc_curve(y_true, y_prob, fig_dir / f"{exp_name}_roc_curve.png")
+        plot_pr_curve(y_true, y_prob, fig_dir / f"{exp_name}_pr_curve.png")
 
-        if {"coord_mae", "dur_mae"}.issubset(pred_df.columns):
+        if {"coord_mae", "dur_mae", "decision_steps", "stop_step_error"}.issubset(pred_df.columns):
             metrics_payload["gaze"] = {
                 "fixation_position_mae": float(pred_df["coord_mae"].mean()),
                 "duration_mae": float(pred_df["dur_mae"].mean()),
+                "avg_decision_steps": float(pred_df["decision_steps"].mean()),
+                "stop_step_error": float(pred_df["stop_step_error"].mean()),
             }
+        if "step_probs_json" in pred_df.columns:
+            sequences = [json.loads(x) for x in pred_df["step_probs_json"].dropna().tolist()]
+            plot_confidence_over_time(sequences, fig_dir / f"{exp_name}_confidence_curve.png", title=f"{exp_name} Confidence Over Time")
 
     metrics_path = metric_dir / f"{exp_name}_test_metrics.json"
     save_json(metrics_payload, metrics_path)
